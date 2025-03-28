@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useFiles } from "./context/files-context";
-import { FileText, FileCode, FileJson, AlertCircle, X, Code, File, Save, Eye, Edit2 } from "lucide-react";
+import { FileText, FileCode, FileJson, AlertCircle, X, Code, File, Save, Eye, Edit2, Edit } from "lucide-react";
 import { dbService } from "@/lib/indexeddb-service";
 import ReactMarkdown from 'react-markdown';
 
@@ -262,11 +262,13 @@ export default function Viewer() {
     openTabs, 
     activeTabId, 
     setActiveTab, 
-    closeTab 
+    closeTab,
+    refreshFile
   } = useFiles();
   
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditMode, setIsEditMode] = useState<Record<string, boolean>>({});
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
   // Load content when selectedFile changes
@@ -279,22 +281,79 @@ export default function Viewer() {
     }
   }, [selectedFile]);
   
-  // Make the save button accessible to other components
+  // Make the save button and edit mode toggle accessible to other components
   useEffect(() => {
-    // Expose the save functionality via the DOM for parent components
+    // Expose the functionality via the DOM for parent components
     const handleExternalSave = () => {
       saveActiveFile();
     };
 
-    // Create a global function that can be called by other components
-    const saveFn = window as any;
-    saveFn._editorSaveFile = handleExternalSave;
+    const handleToggleEditMode = () => {
+      if (!activeTabId) return;
+      
+      const activeTab = openTabs.find(tab => tab.id === activeTabId);
+      if (activeTab) {
+        toggleEditMode(activeTab.fileId);
+      }
+    };
+
+    const handleDownloadFile = () => {
+      if (!activeTabId) return;
+      
+      const activeTab = openTabs.find(tab => tab.id === activeTabId);
+      if (activeTab && activeTab.fileId) {
+        const content = fileContents[activeTab.fileId];
+        if (content) {
+          // Create a blob and download it
+          const blob = new Blob([content], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = activeTab.fileName || 'download.txt';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+      }
+    };
+
+    // Create global functions that can be called by other components
+    const win = window as any;
+    win._editorSaveFile = handleExternalSave;
+    win._editorToggleEditMode = handleToggleEditMode;
+    win._editorDownloadFile = handleDownloadFile;
 
     return () => {
       // Clean up when component unmounts
-      delete saveFn._editorSaveFile;
+      delete win._editorSaveFile;
+      delete win._editorToggleEditMode;
+      delete win._editorDownloadFile;
     };
-  }, [activeTabId, openTabs]);
+  }, [activeTabId, openTabs, fileContents]);
+
+  // Check if file is editable
+  const isFileEditable = (mimeType?: string, fileName?: string) => {
+    // Files that are not editable
+    if (!mimeType || !fileName) return false;
+    
+    if (mimeType === 'application/pdf') return false;
+    if (mimeType === 'application/msword' || 
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        fileName.toLowerCase().endsWith('.doc') || 
+        fileName.toLowerCase().endsWith('.docx')) return false;
+    
+    // All other files are considered editable
+    return true;
+  };
+
+  // Toggle edit mode for a file
+  const toggleEditMode = (fileId: string) => {
+    setIsEditMode(prev => ({
+      ...prev,
+      [fileId]: !prev[fileId]
+    }));
+  };
 
   // Update file content in state
   const handleContentChange = useCallback((fileId: string, content: string) => {
@@ -343,6 +402,17 @@ export default function Viewer() {
       console.log("Updating file in DB:", updatedFile.name);
       await dbService.updateFile(updatedFile);
       console.log("File saved successfully:", updatedFile.name);
+      
+      // Update the file in context to avoid requiring a refresh
+      if (refreshFile) {
+        refreshFile(updatedFile);
+      }
+      
+      // Exit edit mode after saving
+      setIsEditMode(prev => ({
+        ...prev,
+        [fileId]: false
+      }));
       
       // Show a success indicator with React state
       setIsSaving(false);
@@ -403,8 +473,11 @@ export default function Viewer() {
     return mimeType === 'application/pdf';
   };
 
+  // Modify the renderFileContent function to handle edit mode
   const renderFileContent = (fileId: string, mimeType?: string) => {
     const content = fileContents[fileId] || '';
+    const isEditable = isFileEditable(mimeType, openTabs.find(tab => tab.fileId === fileId)?.fileName);
+    const editMode = isEditMode[fileId] || false;
     
     if (!mimeType) return <div className="p-4">Unknown file type</div>;
     
@@ -448,33 +521,74 @@ export default function Viewer() {
         mimeType.includes('html') || 
         mimeType.includes('css') || 
         mimeType.includes('xml')) {
-      return (
+      // For code files, only show editor in edit mode
+      return editMode ? (
         <CodeViewer 
           content={content}
           onChange={(value) => handleContentChange(fileId, value)}
         />
+      ) : (
+        <div className="w-full h-full overflow-auto">
+          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
+            {content}
+          </pre>
+        </div>
       );
     } else if (mimeType === 'text/markdown' || fileId.toLowerCase().endsWith('.md')) {
-      return (
-        <MarkdownViewer 
-          content={content}
-          onChange={(value) => handleContentChange(fileId, value)}
+      // For markdown files, show editor in edit mode, markdown rendered otherwise
+      return editMode ? (
+        <textarea
+          className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
+          value={content}
+          onChange={(e) => handleContentChange(fileId, e.target.value)}
+          spellCheck={false}
         />
+      ) : (
+        <div className="markdown-body p-4 overflow-auto">
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </div>
       );
     } else if (mimeType === 'application/json' || fileId.toLowerCase().endsWith('.json')) {
-      return (
+      // For JSON files
+      return editMode ? (
         <JsonViewer 
           content={content}
           onChange={(value) => handleContentChange(fileId, value)}
         />
+      ) : (
+        <div className="w-full h-full overflow-auto">
+          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
+            {syntaxHighlightJSON(content)}
+          </pre>
+        </div>
       );
     } else {
-      return (
+      // For other text files
+      return editMode ? (
         <TextViewer 
           content={content}
           onChange={(value) => handleContentChange(fileId, value)}
         />
+      ) : (
+        <div className="w-full h-full overflow-auto">
+          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
+            {content}
+          </pre>
+        </div>
       );
+    }
+  };
+
+  // Simple JSON syntax highlighting for view mode
+  const syntaxHighlightJSON = (json: string) => {
+    try {
+      // Format the JSON with indentation
+      const obj = JSON.parse(json);
+      const formatted = JSON.stringify(obj, null, 2);
+      return formatted;
+    } catch (e) {
+      // If JSON is invalid, return as-is
+      return json;
     }
   };
 
@@ -535,7 +649,7 @@ export default function Viewer() {
         ref={saveButtonRef}
       />
       
-      {/* Content */}
+      {/* Content area */}
       <div className="flex-1 overflow-auto relative">
         {activeTabId && (
           <>
@@ -547,16 +661,18 @@ export default function Viewer() {
             )}
             
             {/* File content */}
-            {openTabs.map(tab => {
-              if (tab.id === activeTabId) {
-                return (
-                  <div key={tab.id} className="h-full">
-                    {renderFileContent(tab.fileId, tab.mimeType)}
-                  </div>
-                );
-              }
-              return null;
-            })}
+            <div className="h-full">
+              {openTabs.map(tab => {
+                if (tab.id === activeTabId) {
+                  return (
+                    <div key={`content-${tab.id}`} className="h-full">
+                      {renderFileContent(tab.fileId, tab.mimeType)}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
           </>
         )}
       </div>

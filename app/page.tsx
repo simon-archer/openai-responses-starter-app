@@ -1,5 +1,5 @@
 "use client";
-import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, Check, FileText, PlusCircle } from "lucide-react";
+import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, Check, FileText, PlusCircle, Trash2, Copy, Maximize2, RefreshCw, Globe, Code, Download, Edit } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
@@ -62,57 +62,43 @@ function PanelSelector({
     }
   };
 
-  // Render panel-specific actions based on currentType
+  // Render panel-specific toolbar based on currentType
+  const renderToolbar = () => {
+    // Remove all left-aligned icons for a cleaner interface
+    return null;
+  };
+
+  // Separate function for actions on the right side
   const renderPanelActions = () => {
     switch (currentType) {
       case "Conversations":
         return (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <button 
               className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
-              onClick={() => {
-                // Use the context function to create a new conversation
-                conversationsContext.onNewConversation();
-              }}
+              onClick={() => conversationsContext.onNewConversation()}
               title="New Conversation"
             >
               <PlusCircle size={16} />
             </button>
           </div>
         );
+      case "Chat":
+        return null;
+      case "Tools":
+        return null;
       case "Files":
         return (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <button 
-              className="p-1 rounded hover:bg-gray-100"
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
               onClick={() => fileInputRef.current?.click()}
               title="Upload File"
             >
               <Upload size={16} />
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                className="hidden" 
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  
-                  // Upload each file
-                  for (let i = 0; i < files.length; i++) {
-                    filesContext.uploadFile(files[i]);
-                  }
-                  
-                  // Reset the file input
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-                multiple
-                accept=".txt,.js,.jsx,.ts,.tsx,.css,.html,.json,.md,.pdf,.doc,.docx"
-              />
             </button>
             <button 
-              className="p-1 rounded hover:bg-gray-100"
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
               onClick={() => {
                 const folderName = prompt("Enter folder name:");
                 if (folderName && folderName.trim() !== "") {
@@ -123,44 +109,77 @@ function PanelSelector({
             >
               <FolderPlus size={16} />
             </button>
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              className="hidden" 
+              onChange={(e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                
+                // Upload each file
+                for (let i = 0; i < files.length; i++) {
+                  filesContext.uploadFile(files[i]);
+                }
+                
+                // Reset the file input
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              multiple
+              accept=".txt,.js,.jsx,.ts,.tsx,.css,.html,.json,.md,.pdf,.doc,.docx"
+            />
           </div>
         );
       case "Viewer":
         return (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             {filesContext.activeTabId && (
-              <button
-                className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
-                onClick={() => {
-                  console.log("Save button clicked");
-                  
-                  try {
-                    // Approach 1: Try to click the save button via data attribute
-                    const editorRef = document.querySelector('[data-editor-save]');
-                    if (editorRef) {
-                      console.log("Found save button via data attribute");
-                      (editorRef as HTMLButtonElement).click();
-                    } else {
-                      console.warn("Save button element not found");
-                      
-                      // Approach 2: Try to use the global function if available
-                      const win = window as any;
-                      if (win._editorSaveFile && typeof win._editorSaveFile === 'function') {
-                        console.log("Using global save function");
-                        win._editorSaveFile();
-                      } else {
-                        console.error("No method found to save the file");
-                      }
+              <>
+                <button 
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
+                  onClick={() => {
+                    // Toggle edit mode
+                    const win = window as any;
+                    if (win._editorToggleEditMode && typeof win._editorToggleEditMode === 'function') {
+                      win._editorToggleEditMode();
                     }
-                  } catch (error) {
-                    console.error("Error saving file:", error);
-                  }
-                }}
-                title="Save File"
-              >
-                <Save size={16} />
-              </button>
+                  }}
+                  title="Edit File"
+                >
+                  <Edit size={16} />
+                </button>
+                <button 
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
+                  onClick={() => {
+                    // Save file
+                    const win = window as any;
+                    if (win._editorSaveFile && typeof win._editorSaveFile === 'function') {
+                      win._editorSaveFile();
+                    }
+                  }}
+                  title="Save File"
+                >
+                  <Save size={16} />
+                </button>
+              </>
             )}
+            <button 
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
+              onClick={() => {
+                // Download file
+                const win = window as any;
+                if (win._editorDownloadFile && typeof win._editorDownloadFile === 'function') {
+                  win._editorDownloadFile();
+                } else {
+                  console.log("Download file clicked");
+                }
+              }}
+              title="Download File"
+            >
+              <Download size={16} />
+            </button>
           </div>
         );
       default:
@@ -170,50 +189,55 @@ function PanelSelector({
 
   return (
     <div className="flex items-center justify-between w-full">
-      <div className="relative" ref={dropdownRef}>
-        <button 
-          onClick={() => setIsOpen(!isOpen)} 
-          className="flex items-center gap-2 text-lg font-medium px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-150 shadow-sm"
-          aria-expanded={isOpen}
-          aria-haspopup="true"
-        >
-          {getPanelIcon(currentType)}
-          <span>{currentType}</span>
-          <ChevronDown 
-            size={16} 
-            className={`ml-1 opacity-70 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
-          />
-        </button>
-        
-        {isOpen && (
-          <div 
-            className="absolute top-full left-0 mt-1 bg-white rounded-lg z-10 w-auto min-w-[160px] border border-gray-200 shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden transition-all duration-150 p-2 flex flex-col gap-1"
-            role="menu"
-            aria-orientation="vertical"
+      <div className="flex items-center">
+        <div className="relative" ref={dropdownRef}>
+          <button 
+            onClick={() => setIsOpen(!isOpen)} 
+            className="flex items-center gap-2 text-lg font-medium px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-150 shadow-sm"
+            aria-expanded={isOpen}
+            aria-haspopup="true"
           >
-            {allowedTypes.map((type) => (
-              <button
-                key={type}
-                className={`flex items-center w-full text-left px-3 py-2 text-sm transition-colors duration-150 rounded-md ${
-                  type === currentType 
-                    ? "font-medium bg-blue-50 text-blue-700" 
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-                onClick={() => {
-                  onChange(type);
-                  setIsOpen(false);
-                }}
-                role="menuitem"
-              >
-                <span className="mr-2.5">{getPanelIcon(type)}</span>
-                {type}
-              </button>
-            ))}
-          </div>
-        )}
+            {getPanelIcon(currentType)}
+            <span>{currentType}</span>
+            <ChevronDown 
+              size={16} 
+              className={`ml-1 opacity-70 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+            />
+          </button>
+          
+          {isOpen && (
+            <div 
+              className="absolute top-full left-0 mt-1 bg-white rounded-lg z-10 w-auto min-w-[160px] border border-gray-200 shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden transition-all duration-150 p-2 flex flex-col gap-1"
+              role="menu"
+              aria-orientation="vertical"
+            >
+              {allowedTypes.map((type) => (
+                <button
+                  key={type}
+                  className={`flex items-center w-full text-left px-3 py-2 text-sm transition-colors duration-150 rounded-md ${
+                    type === currentType 
+                      ? "font-medium bg-blue-50 text-blue-700" 
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
+                  onClick={() => {
+                    onChange(type);
+                    setIsOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <span className="mr-2.5">{getPanelIcon(type)}</span>
+                  {type}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Toolbar beside dropdown */}
+        {renderToolbar()}
       </div>
       
-      {/* Panel-specific actions */}
+      {/* Panel-specific actions on the right */}
       {renderPanelActions()}
     </div>
   );

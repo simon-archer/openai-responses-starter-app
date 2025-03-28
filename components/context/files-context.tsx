@@ -39,6 +39,7 @@ interface FilesContextType {
   uploadFile: (file: File) => Promise<void>;
   createFolder: (name: string) => Promise<void>;
   deleteFile: (fileId: string) => Promise<void>;
+  refreshFile: (file: FileItem) => void;
 }
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
@@ -619,6 +620,34 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  // Method to refresh a file after it's been updated
+  const refreshFile = (updatedFile: FileItem) => {
+    console.log("Refreshing file in context:", updatedFile.name);
+    
+    // Update the file in the files state
+    setFiles(prevFiles => {
+      return updateFileTree(prevFiles, updatedFile.id, () => updatedFile);
+    });
+    
+    // If this is the selected file, update it in state
+    if (selectedFileId === updatedFile.id) {
+      setSelectedFile(updatedFile);
+    }
+    
+    // Update the file content in open tabs if needed
+    const tabWithFile = openTabs.find(tab => tab.fileId === updatedFile.id);
+    if (tabWithFile) {
+      // Update tab metadata if needed
+      setOpenTabs(prevTabs => 
+        prevTabs.map(tab => 
+          tab.fileId === updatedFile.id 
+            ? { ...tab, mimeType: updatedFile.mimeType } 
+            : tab
+        )
+      );
+    }
+  };
+
   return (
     <FilesContext.Provider
       value={{
@@ -636,7 +665,8 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
         setActiveTab,
         uploadFile,
         createFolder,
-        deleteFile
+        deleteFile,
+        refreshFile
       }}
     >
       {children}
