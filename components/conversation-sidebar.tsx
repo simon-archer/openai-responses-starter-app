@@ -1,48 +1,17 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Button } from "./ui/button";
 import { PlusCircle } from "lucide-react";
+import { useConversations } from "./context/conversations-context";
 
-interface Conversation {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ConversationSidebarProps {
-  onSelectConversation: (conversationId: string) => void;
-  onNewConversation: () => void;
-  currentConversationId?: string;
-}
-
-export default function ConversationSidebar({
-  onSelectConversation,
-  onNewConversation,
-  currentConversationId,
-}: ConversationSidebarProps) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchConversations = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch("/api/conversations");
-        if (!response.ok) {
-          throw new Error("Failed to fetch conversations");
-        }
-        const data = await response.json();
-        setConversations(data);
-      } catch (error) {
-        console.error("Error fetching conversations:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchConversations();
-  }, []);
+export default function ConversationSidebar() {
+  const {
+    conversations,
+    isLoading,
+    currentConversationId,
+    onSelectConversation,
+    onNewConversation
+  } = useConversations();
 
   return (
     <div className="h-full w-full bg-white flex flex-col">

@@ -70,12 +70,7 @@ export default function Main() {
   const renderPanelContent = (type: PanelContentType) => {
     switch (type) {
       case "Conversations":
-        return (
-          <ConversationSidebar 
-            onSelectConversation={() => {}}
-            onNewConversation={() => {}}
-          />
-        );
+        return <ConversationSidebar />;
       case "Chat":
         return <Assistant />;
       case "Tools":

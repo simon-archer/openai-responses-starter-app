@@ -1,15 +1,22 @@
 "use client";
-import React, { useState } from "react";
+import React from "react";
 import PanelConfig from "./panel-config";
 import WebSearchConfig from "./websearch-config";
 import FileSearchSetup from "./file-search-setup";
 import FunctionsView from "./functions-view";
+import { useTools } from "./context/tools-context";
 
 export default function ToolsPanel() {
-  const [selectedTool, setSelectedTool] = useState<string>("websearch");
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [fileSearchEnabled, setFileSearchEnabled] = useState(false);
-  const [functionsEnabled, setFunctionsEnabled] = useState(false);
+  const {
+    selectedTool,
+    setSelectedTool,
+    webSearchEnabled,
+    setWebSearchEnabled,
+    fileSearchEnabled,
+    setFileSearchEnabled,
+    functionsEnabled,
+    setFunctionsEnabled
+  } = useTools();
 
   const toolOptions = [
     { id: "websearch", label: "Web" },
