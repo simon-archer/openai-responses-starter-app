@@ -1,17 +1,89 @@
 "use client";
-import { Menu, X } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
 import ToolsPanel from "@/components/tools-panel";
 import ConversationSidebar from "@/components/conversation-sidebar";
 import ResizablePanel from "@/components/resizable-panel";
+import FilesPanel from "@/components/files-panel";
+
+// Panel content types
+type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files";
+
+// Panel selector component
+function PanelSelector({ 
+  currentType, 
+  onChange,
+  allowedTypes = ["Conversations", "Chat", "Tools", "Files"]
+}: { 
+  currentType: PanelContentType; 
+  onChange: (type: PanelContentType) => void;
+  allowedTypes?: PanelContentType[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button 
+        onClick={() => setIsOpen(!isOpen)} 
+        className="flex items-center gap-1 text-lg font-medium hover:opacity-80"
+      >
+        {currentType}
+        <ChevronDown size={16} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-white shadow-md rounded-md z-10 min-w-32">
+          {allowedTypes.map((type) => (
+            <button
+              key={type}
+              className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
+                type === currentType ? "font-medium" : ""
+              }`}
+              onClick={() => {
+                onChange(type);
+                setIsOpen(false);
+              }}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Main() {
   const [isToolsPanelOpen, setIsToolsPanelOpen] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(20);
   const [centerPanelWidth, setCenterPanelWidth] = useState(60);
   const [rightPanelWidth, setRightPanelWidth] = useState(20);
+  
+  // Panel content type state
+  const [leftPanelType, setLeftPanelType] = useState<PanelContentType>("Conversations");
+  const [centerPanelType, setCenterPanelType] = useState<PanelContentType>("Chat");
+  const [rightPanelType, setRightPanelType] = useState<PanelContentType>("Tools");
+
+  // Panel content renderer
+  const renderPanelContent = (type: PanelContentType) => {
+    switch (type) {
+      case "Conversations":
+        return (
+          <ConversationSidebar 
+            onSelectConversation={() => {}}
+            onNewConversation={() => {}}
+          />
+        );
+      case "Chat":
+        return <Assistant />;
+      case "Tools":
+        return <ToolsPanel />;
+      case "Files":
+        return <FilesPanel />;
+    }
+  };
 
   // Initial dummy values - will be updated in useEffect
   const [windowSize, setWindowSize] = useState({
@@ -72,7 +144,7 @@ export default function Main() {
     <div className="flex h-screen p-4 gap-4 bg-gray-100">
       {isClient && (
         <div className="flex gap-4 h-full w-full">
-          {/* Left Panel - Conversations */}
+          {/* Left Panel */}
           <ResizablePanel
             width={windowSize.width * (leftPanelWidth / 100)}
             height={availableHeight}
@@ -82,14 +154,19 @@ export default function Main() {
             className="flex-none"
           >
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <ConversationSidebar 
-                onSelectConversation={() => {}}
-                onNewConversation={() => {}}
-              />
+              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+                <PanelSelector 
+                  currentType={leftPanelType} 
+                  onChange={setLeftPanelType}
+                />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                {renderPanelContent(leftPanelType)}
+              </div>
             </div>
           </ResizablePanel>
 
-          {/* Center Panel - Chat */}
+          {/* Center Panel */}
           <ResizablePanel
             width={windowSize.width * (centerPanelWidth / 100)}
             height={availableHeight}
@@ -99,14 +176,30 @@ export default function Main() {
             className="flex-1"
           >
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <Assistant />
+              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+                <PanelSelector 
+                  currentType={centerPanelType} 
+                  onChange={setCenterPanelType}
+                />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                {renderPanelContent(centerPanelType)}
+              </div>
             </div>
           </ResizablePanel>
 
-          {/* Right Panel - Tools */}
+          {/* Right Panel */}
           <div className="hidden md:block" style={{ width: `${rightPanelWidth}%`, height: `${availableHeight}px` }}>
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <ToolsPanel />
+              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+                <PanelSelector 
+                  currentType={rightPanelType} 
+                  onChange={setRightPanelType}
+                />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                {renderPanelContent(rightPanelType)}
+              </div>
             </div>
           </div>
         </div>
@@ -123,10 +216,18 @@ export default function Main() {
       {isToolsPanelOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black bg-opacity-30 md:hidden">
           <div className="w-full max-w-sm bg-white h-full rounded-l-2xl">
-            <button className="p-4" onClick={() => setIsToolsPanelOpen(false)}>
-              <X size={24} />
-            </button>
-            <ToolsPanel />
+            <div className="flex items-center justify-between p-4 border-b border-stone-100">
+              <PanelSelector 
+                currentType={rightPanelType} 
+                onChange={setRightPanelType}
+              />
+              <button onClick={() => setIsToolsPanelOpen(false)} className="ml-2">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {renderPanelContent(rightPanelType)}
+            </div>
           </div>
         </div>
       )}

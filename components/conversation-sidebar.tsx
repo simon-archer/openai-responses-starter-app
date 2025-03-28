@@ -46,19 +46,6 @@ export default function ConversationSidebar({
 
   return (
     <div className="h-full w-full bg-white flex flex-col">
-      <div className="flex justify-between items-center p-4 border-b border-stone-100">
-        <h2 className="text-lg font-medium">Conversations</h2>
-        <Button
-          onClick={onNewConversation}
-          variant="ghost"
-          size="sm"
-          className="flex items-center gap-1"
-        >
-          <PlusCircle size={16} />
-          New
-        </Button>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-3 h-full">
         {isLoading ? (
           <div className="flex justify-center items-center h-20">
@@ -86,6 +73,17 @@ export default function ConversationSidebar({
             ))}
           </ul>
         )}
+      </div>
+      <div className="p-3 border-t border-stone-100">
+        <Button
+          onClick={onNewConversation}
+          variant="outline"
+          size="sm"
+          className="flex w-full items-center justify-center gap-1"
+        >
+          <PlusCircle size={16} />
+          New Conversation
+        </Button>
       </div>
     </div>
   );
