@@ -1,5 +1,5 @@
 "use client";
-import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, Check, FileText, PlusCircle, Trash2, Copy, Maximize2, RefreshCw, Globe, Code, Download, Edit } from "lucide-react";
+import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, FileText, PlusCircle, Download, Edit } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
@@ -8,7 +8,7 @@ import ConversationSidebar from "@/components/conversation-sidebar";
 import ResizablePanel from "@/components/resizable-panel";
 import FilesPanel from "@/components/files-panel";
 import Viewer from "@/components/editor";
-import { useFiles, TabItem } from "@/components/context/files-context";
+import { useFiles } from "@/components/context/files-context";
 import { useConversations } from "@/components/context/conversations-context";
 
 // Panel content types

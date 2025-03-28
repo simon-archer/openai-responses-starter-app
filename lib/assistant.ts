@@ -53,8 +53,10 @@ export const handleTurn = async (
     });
 
     if (!response.ok) {
-      console.error(`Error: ${response.status} - ${response.statusText}`);
-      return;
+      const errorBody = await response.text();
+      console.error(`Error fetching turn response: ${response.status} - ${response.statusText}`, errorBody);
+      // Throw a specific error
+      throw new Error(`API request failed: ${response.status} - ${response.statusText}. Body: ${errorBody}`); 
     }
 
     // Reader for streaming data
@@ -95,9 +97,9 @@ export const handleTurn = async (
     }
   } catch (error) {
     console.error("Error handling turn:", error);
+    // Re-throw the error to ensure the caller knows about it
+    throw error; 
   }
-  
-  return assistantResponse;
 };
 
 export const processMessages = async () => {
@@ -124,235 +126,241 @@ export const processMessages = async () => {
   let assistantMessageContent = "";
   let functionArguments = "";
 
-  await handleTurn(allConversationItems, tools, async ({ event, data }) => {
-    switch (event) {
-      case "response.output_text.delta":
-      case "response.output_text.annotation.added": {
-        const { delta, item_id, annotation } = data;
+  try {
+    await handleTurn(allConversationItems, tools, async ({ event, data }) => {
+      switch (event) {
+        case "response.output_text.delta":
+        case "response.output_text.annotation.added": {
+          const { delta, item_id, annotation } = data;
 
-        console.log("event", data);
+          console.log("event", data);
 
-        let partial = "";
-        if (typeof delta === "string") {
-          partial = delta;
-        }
-        assistantMessageContent += partial;
-
-        // If the last message isn't an assistant message, create a new one
-        const lastItem = chatMessages[chatMessages.length - 1];
-        if (
-          !lastItem ||
-          lastItem.type !== "message" ||
-          lastItem.role !== "assistant" ||
-          (lastItem.id && lastItem.id !== item_id)
-        ) {
-          chatMessages.push({
-            type: "message",
-            role: "assistant",
-            id: item_id,
-            content: [
-              {
-                type: "output_text",
-                text: assistantMessageContent,
-              },
-            ],
-          } as MessageItem);
-        } else {
-          const contentItem = lastItem.content[0];
-          if (contentItem && contentItem.type === "output_text") {
-            contentItem.text = assistantMessageContent;
-            if (annotation) {
-              contentItem.annotations = [
-                ...(contentItem.annotations ?? []),
-                annotation,
-              ];
-            }
+          let partial = "";
+          if (typeof delta === "string") {
+            partial = delta;
           }
-        }
+          assistantMessageContent += partial;
 
-        setChatMessages([...chatMessages]);
-        
-        // Store the assistant response for saving to database and returning
-        assistantResponseToReturn = {
-          type: "message",
-          role: "assistant",
-          content: [{
-            type: "output_text",
-            text: assistantMessageContent,
-            annotations: lastItem?.type === "message" ? lastItem.content[0]?.annotations || [] : []
-          }]
-        };
-        break;
-      }
-
-      case "response.output_item.added": {
-        const { item } = data || {};
-        // New item coming in
-        if (!item || !item.type) {
-          break;
-        }
-        // Handle differently depending on the item type
-        switch (item.type) {
-          case "message": {
-            const text = item.content?.text || "";
+          // If the last message isn't an assistant message, create a new one
+          const lastItem = chatMessages[chatMessages.length - 1];
+          if (
+            !lastItem ||
+            lastItem.type !== "message" ||
+            lastItem.role !== "assistant" ||
+            (lastItem.id && lastItem.id !== item_id)
+          ) {
             chatMessages.push({
               type: "message",
               role: "assistant",
+              id: item_id,
               content: [
                 {
                   type: "output_text",
-                  text,
+                  text: assistantMessageContent,
                 },
               ],
-            });
-            conversationItems.push({
-              role: "assistant",
-              content: [
-                {
-                  type: "output_text",
-                  text,
-                },
-              ],
-            });
-            setChatMessages([...chatMessages]);
-            setConversationItems([...conversationItems]);
-            break;
+            } as MessageItem);
+          } else {
+            const contentItem = lastItem.content[0];
+            if (contentItem && contentItem.type === "output_text") {
+              contentItem.text = assistantMessageContent;
+              if (annotation) {
+                contentItem.annotations = [
+                  ...(contentItem.annotations ?? []),
+                  annotation,
+                ];
+              }
+            }
           }
-          case "function_call": {
-            functionArguments += item.arguments || "";
-            chatMessages.push({
-              type: "tool_call",
-              tool_type: "function_call",
-              status: "in_progress",
-              id: item.id,
-              name: item.name, // function name,e.g. "get_weather"
-              arguments: item.arguments || "",
-              parsedArguments: {},
-              output: null,
-            });
-            setChatMessages([...chatMessages]);
-            break;
-          }
-          case "web_search_call": {
-            chatMessages.push({
-              type: "tool_call",
-              tool_type: "web_search_call",
-              status: item.status || "in_progress",
-              id: item.id,
-            });
-            setChatMessages([...chatMessages]);
-            break;
-          }
-          case "file_search_call": {
-            chatMessages.push({
-              type: "tool_call",
-              tool_type: "file_search_call",
-              status: item.status || "in_progress",
-              id: item.id,
-            });
-            setChatMessages([...chatMessages]);
-            break;
-          }
-        }
-        break;
-      }
 
-      case "response.output_item.done": {
-        // After output item is done, adding tool call ID
-        const { item } = data || {};
-
-        const toolCallMessage = chatMessages.find((m) => m.id === item.id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.call_id = item.call_id;
           setChatMessages([...chatMessages]);
-        }
-        conversationItems.push(item);
-        setConversationItems([...conversationItems]);
-      }
-
-      case "response.function_call_arguments.delta": {
-        // Streaming arguments delta to show in the chat
-        functionArguments += data.delta || "";
-        let parsedFunctionArguments = {};
-        if (functionArguments.length > 0) {
-          parsedFunctionArguments = parse(functionArguments);
+          
+          // Store the assistant response for saving to database and returning
+          assistantResponseToReturn = {
+            type: "message",
+            role: "assistant",
+            content: [{
+              type: "output_text",
+              text: assistantMessageContent,
+              annotations: lastItem?.type === "message" ? lastItem.content[0]?.annotations || [] : []
+            }]
+          };
+          break;
         }
 
-        const toolCallMessage = chatMessages.find((m) => m.id === data.item_id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.arguments = functionArguments;
-          try {
-            toolCallMessage.parsedArguments = parsedFunctionArguments;
-          } catch {
-            // partial JSON can fail parse; ignore
+        case "response.output_item.added": {
+          const { item } = data || {};
+          // New item coming in
+          if (!item || !item.type) {
+            break;
           }
-          setChatMessages([...chatMessages]);
+          // Handle differently depending on the item type
+          switch (item.type) {
+            case "message": {
+              const text = item.content?.text || "";
+              chatMessages.push({
+                type: "message",
+                role: "assistant",
+                content: [
+                  {
+                    type: "output_text",
+                    text,
+                  },
+                ],
+              });
+              conversationItems.push({
+                role: "assistant",
+                content: [
+                  {
+                    type: "output_text",
+                    text,
+                  },
+                ],
+              });
+              setChatMessages([...chatMessages]);
+              setConversationItems([...conversationItems]);
+              break;
+            }
+            case "function_call": {
+              functionArguments += item.arguments || "";
+              chatMessages.push({
+                type: "tool_call",
+                tool_type: "function_call",
+                status: "in_progress",
+                id: item.id,
+                name: item.name, // function name,e.g. "get_weather"
+                arguments: item.arguments || "",
+                parsedArguments: {},
+                output: null,
+              });
+              setChatMessages([...chatMessages]);
+              break;
+            }
+            case "web_search_call": {
+              chatMessages.push({
+                type: "tool_call",
+                tool_type: "web_search_call",
+                status: item.status || "in_progress",
+                id: item.id,
+              });
+              setChatMessages([...chatMessages]);
+              break;
+            }
+            case "file_search_call": {
+              chatMessages.push({
+                type: "tool_call",
+                tool_type: "file_search_call",
+                status: item.status || "in_progress",
+                id: item.id,
+              });
+              setChatMessages([...chatMessages]);
+              break;
+            }
+          }
+          break;
         }
-        break;
-      }
 
-      case "response.function_call_arguments.done": {
-        // This has the full final arguments string
-        const { item_id, arguments: finalArgs } = data;
+        case "response.output_item.done": {
+          // After output item is done, adding tool call ID
+          const { item } = data || {};
 
-        functionArguments = finalArgs;
-
-        // Mark the tool_call as "completed" and parse the final JSON
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.arguments = finalArgs;
-          toolCallMessage.parsedArguments = parse(finalArgs);
-          toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
-
-          // Handle tool call (execute function)
-          const toolResult = await handleTool(
-            toolCallMessage.name as keyof typeof functionsMap,
-            toolCallMessage.parsedArguments
-          );
-
-          // Record tool output
-          toolCallMessage.output = JSON.stringify(toolResult);
-          setChatMessages([...chatMessages]);
-          conversationItems.push({
-            type: "function_call_output",
-            call_id: toolCallMessage.call_id,
-            status: "completed",
-            output: JSON.stringify(toolResult),
-          });
+          const toolCallMessage = chatMessages.find((m) => m.id === item.id);
+          if (toolCallMessage && toolCallMessage.type === "tool_call") {
+            toolCallMessage.call_id = item.call_id;
+            setChatMessages([...chatMessages]);
+          }
+          conversationItems.push(item);
           setConversationItems([...conversationItems]);
-
-          // Create another turn after tool output has been added
-          await processMessages();
         }
-        break;
-      }
 
-      case "response.web_search_call.completed": {
-        const { item_id, output } = data;
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.output = output;
-          toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
+        case "response.function_call_arguments.delta": {
+          // Streaming arguments delta to show in the chat
+          functionArguments += data.delta || "";
+          let parsedFunctionArguments = {};
+          if (functionArguments.length > 0) {
+            parsedFunctionArguments = parse(functionArguments);
+          }
+
+          const toolCallMessage = chatMessages.find((m) => m.id === data.item_id);
+          if (toolCallMessage && toolCallMessage.type === "tool_call") {
+            toolCallMessage.arguments = functionArguments;
+            try {
+              toolCallMessage.parsedArguments = parsedFunctionArguments;
+            } catch {
+              // partial JSON can fail parse; ignore
+            }
+            setChatMessages([...chatMessages]);
+          }
+          break;
         }
-        break;
-      }
 
-      case "response.file_search_call.completed": {
-        const { item_id, output } = data;
-        const toolCallMessage = chatMessages.find((m) => m.id === item_id);
-        if (toolCallMessage && toolCallMessage.type === "tool_call") {
-          toolCallMessage.output = output;
-          toolCallMessage.status = "completed";
-          setChatMessages([...chatMessages]);
+        case "response.function_call_arguments.done": {
+          // This has the full final arguments string
+          const { item_id, arguments: finalArgs } = data;
+
+          functionArguments = finalArgs;
+
+          // Mark the tool_call as "completed" and parse the final JSON
+          const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+          if (toolCallMessage && toolCallMessage.type === "tool_call") {
+            toolCallMessage.arguments = finalArgs;
+            toolCallMessage.parsedArguments = parse(finalArgs);
+            toolCallMessage.status = "completed";
+            setChatMessages([...chatMessages]);
+
+            // Handle tool call (execute function)
+            const toolResult = await handleTool(
+              toolCallMessage.name as keyof typeof functionsMap,
+              toolCallMessage.parsedArguments
+            );
+
+            // Record tool output
+            toolCallMessage.output = JSON.stringify(toolResult);
+            setChatMessages([...chatMessages]);
+            conversationItems.push({
+              type: "function_call_output",
+              call_id: toolCallMessage.call_id,
+              status: "completed",
+              output: JSON.stringify(toolResult),
+            });
+            setConversationItems([...conversationItems]);
+
+            // Create another turn after tool output has been added
+            await processMessages();
+          }
+          break;
         }
-        break;
-      }
 
-      // Handle other events as needed
-    }
-  });
+        case "response.web_search_call.completed": {
+          const { item_id, output } = data;
+          const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+          if (toolCallMessage && toolCallMessage.type === "tool_call") {
+            toolCallMessage.output = output;
+            toolCallMessage.status = "completed";
+            setChatMessages([...chatMessages]);
+          }
+          break;
+        }
+
+        case "response.file_search_call.completed": {
+          const { item_id, output } = data;
+          const toolCallMessage = chatMessages.find((m) => m.id === item_id);
+          if (toolCallMessage && toolCallMessage.type === "tool_call") {
+            toolCallMessage.output = output;
+            toolCallMessage.status = "completed";
+            setChatMessages([...chatMessages]);
+          }
+          break;
+        }
+
+        // Handle other events as needed
+      }
+    });
+  } catch (error) {
+    console.error("Error processing messages via handleTurn:", error);
+    // Re-throw or handle the error appropriately for the caller (Assistant component)
+    throw error;
+  }
   
   // Return the assistant response for saving to database
   return assistantResponseToReturn;

@@ -1,7 +1,5 @@
 "use client";
 import React from "react";
-import { Button } from "./ui/button";
-import { PlusCircle } from "lucide-react";
 import { useConversations } from "./context/conversations-context";
 
 export default function ConversationSidebar() {
@@ -10,7 +8,7 @@ export default function ConversationSidebar() {
     isLoading,
     currentConversationId,
     onSelectConversation,
-    onNewConversation
+    // onNewConversation // Removed as it's unused
   } = useConversations();
 
   return (

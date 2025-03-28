@@ -1,4 +1,4 @@
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLink, FileText } from "lucide-react";
 
 export type Annotation = {
   type: "file_citation" | "url_citation";
@@ -10,24 +10,24 @@ export type Annotation = {
 };
 
 const AnnotationPill = ({ annotation }: { annotation: Annotation }) => {
-  const className =
-    "inline-block text-nowrap px-3 py-1 rounded-full text-xs max-w-48 shrink-0 text-ellipsis overflow-hidden bg-[#ededed] text-zinc-500";
-
   switch (annotation.type) {
     case "file_citation":
-      return <span className={className}>{annotation.filename}</span>;
+      return (
+        <span className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700">
+          <FileText size={10} className="mr-1 flex-shrink-0" />
+          <span className="truncate">{annotation.filename}</span>
+        </span>
+      );
     case "url_citation":
       return (
         <a
           target="_blank"
           rel="noopener noreferrer"
           href={annotation.url}
-          className={className}
+          className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700"
         >
-          <div className=" flex items-center gap-1">
-            <div className="truncate">{annotation.title}</div>
-            <ExternalLinkIcon size={12} className="shrink-0" />
-          </div>
+          <span className="truncate max-w-[140px]">{annotation.title}</span>
+          <ExternalLink size={10} className="ml-1 flex-shrink-0" />
         </a>
       );
   }
@@ -52,8 +52,12 @@ const Annotations = ({ annotations }: { annotations: Annotation[] }) => {
     []
   );
 
+  if (uniqueAnnotations.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="flex max-w-full mr-28 ml-4 overflow-x-scroll gap-2 mb-2">
+    <div className="flex flex-wrap ml-0.5 gap-x-3 text-gray-400 text-[10px] mt-1">
       {uniqueAnnotations.map((annotation: Annotation, index: number) => (
         <AnnotationPill key={index} annotation={annotation} />
       ))}

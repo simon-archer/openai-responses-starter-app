@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useState, useContext, useEffect, ReactNode } from "react";
+import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from "react";
 import { dbService } from "@/lib/indexeddb-service";
 
 // Check if we're in a browser environment
@@ -40,6 +40,7 @@ interface FilesContextType {
   createFolder: (name: string) => Promise<void>;
   deleteFile: (fileId: string) => Promise<void>;
   refreshFile: (file: FileItem) => void;
+  findFileById: (fileId: string, fileList: FileItem[]) => FileItem | null;
 }
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
@@ -91,45 +92,7 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
   const [openTabs, setOpenTabs] = useState<TabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
-  // Initialize IndexedDB and load files
-  useEffect(() => {
-    // Only initialize IndexedDB in the browser
-    if (!isBrowser) return;
-    
-    const initializeDB = async () => {
-      setIsLoading(true);
-      try {
-        await dbService.initDB();
-        await loadFiles();
-      } catch (error) {
-        console.error("Error initializing database:", error);
-        // Add some example files if DB fails
-        loadExampleFiles();
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeDB();
-  }, []);
-
-  const loadFiles = async () => {
-    try {
-      const dbFiles = await dbService.getAllFiles();
-      if (dbFiles && dbFiles.length > 0) {
-        const fileTree = buildFileTree(dbFiles);
-        setFiles(fileTree);
-      } else {
-        // If no files in DB, load sample files
-        loadExampleFiles();
-      }
-    } catch (error) {
-      console.error("Error loading files:", error);
-      loadExampleFiles();
-    }
-  };
-
-  const loadExampleFiles = async () => {
+  const loadExampleFiles = useCallback(async () => {
     // Sample files for demonstration
     const sampleFiles: FileItem[] = [
       {
@@ -231,7 +194,45 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
       const fileTree = buildFileTree(sampleFiles);
       setFiles(fileTree);
     }
-  };
+  }, []);
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const dbFiles = await dbService.getAllFiles();
+      if (dbFiles && dbFiles.length > 0) {
+        const fileTree = buildFileTree(dbFiles);
+        setFiles(fileTree);
+      } else {
+        // If no files in DB, load sample files
+        loadExampleFiles();
+      }
+    } catch (error) {
+      console.error("Error loading files:", error);
+      loadExampleFiles();
+    }
+  }, [loadExampleFiles]);
+
+  // Initialize IndexedDB and load files
+  useEffect(() => {
+    // Only initialize IndexedDB in the browser
+    if (!isBrowser) return;
+    
+    const initializeDB = async () => {
+      setIsLoading(true);
+      try {
+        await dbService.initDB();
+        await loadFiles();
+      } catch (error) {
+        console.error("Error initializing database:", error);
+        // Add some example files if DB fails
+        loadExampleFiles();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeDB();
+  }, [loadFiles, loadExampleFiles]);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -666,7 +667,8 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
         uploadFile,
         createFolder,
         deleteFile,
-        refreshFile
+        refreshFile,
+        findFileById
       }}
     >
       {children}

@@ -9,9 +9,10 @@ import { Item } from "@/lib/assistant";
 interface ChatProps {
   items: Item[];
   onSendMessage: (message: string) => void;
+  isProcessing?: boolean;
 }
 
-const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
+const Chat: React.FC<ChatProps> = ({ items, onSendMessage, isProcessing = false }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputMessage, setInputMessage] = useState("");
   const [isComposing, setIsComposing] = useState(false);
@@ -22,11 +23,17 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
 
   useEffect(() => {
     scrollToBottom();
+    // Log message updates for debugging
+    console.debug("Chat items updated:", {
+      itemCount: items.length,
+      lastItemType: items.length > 0 ? items[items.length - 1]?.type : 'none'
+    });
   }, [items]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputMessage.trim()) {
+      console.debug("Sending message:", inputMessage.trim());
       onSendMessage(inputMessage);
       setInputMessage("");
     }
@@ -39,17 +46,24 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
     }
   };
 
+  // Calculate state for debugging & UI indicators
+  const isToolProcessing = items.some(item => 
+    item.type === "tool_call" && 
+    (item.status === "in_progress" || item.status === "searching")
+  );
+  const isCurrentlyProcessing = isProcessing || isToolProcessing;
+
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full max-h-full">
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 min-h-0">
-        <div className="max-w-3xl mx-auto py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 min-h-0 bg-gray-50">
+        <div className="max-w-3xl mx-auto py-4 space-y-2">
           {items.map((item, index) => (
-            <div key={index} className="message-container">
+            <div key={index} className="message-container">               
               {item.type === "tool_call" ? (
                 <ToolCall toolCall={item} />
               ) : item.type === "message" && item.content?.[0] ? (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Message message={item} />
                   {item.content[0].annotations && item.content[0].annotations.length > 0 && (
                     <Annotations annotations={item.content[0].annotations} />
@@ -63,25 +77,26 @@ const Chat: React.FC<ChatProps> = ({ items, onSendMessage }) => {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-gray-200 bg-white p-4">
+      <div className="border-t border-stone-100 bg-white p-4">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
           <div className="flex w-full items-center">
-            <div className="flex w-full flex-col gap-1.5 rounded-[20px] p-2.5 pl-1.5 transition-colors bg-white border border-stone-200 shadow-sm hover:border-stone-300">
-              <div className="flex items-end gap-1.5 md:gap-2 pl-4">
+            <div className="flex w-full flex-col border border-gray-200 shadow-sm hover:border-gray-300 focus-within:border-blue-300 focus-within:ring-1 focus-within:ring-blue-200">
+              <div className="flex items-end">
                 <textarea
                   rows={1}
-                  placeholder="Message..."
+                  placeholder={isCurrentlyProcessing ? "Assistant is processing..." : "Message..."}
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onCompositionStart={() => setIsComposing(true)}
                   onCompositionEnd={() => setIsComposing(false)}
-                  className="flex-1 resize-none border-0 bg-transparent p-0 focus:outline-none focus:ring-0 text-base"
+                  className="flex-1 resize-none border-0 bg-transparent p-2 pl-3 focus:outline-none focus:ring-0 text-sm"
+                  disabled={isCurrentlyProcessing}
                 />
                 <button
                   type="submit"
-                  disabled={!inputMessage.trim()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-white transition-colors hover:opacity-70 disabled:bg-stone-200 disabled:hover:opacity-100"
+                  disabled={!inputMessage.trim() || isCurrentlyProcessing}
+                  className="flex h-8 w-8 items-center justify-center bg-blue-600 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 active:bg-blue-800 disabled:bg-gray-200 disabled:hover:opacity-100 disabled:cursor-not-allowed"
                 >
                   <svg 
                     width="16" 

@@ -1,606 +1,370 @@
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useFiles } from "./context/files-context";
-import { FileText, FileCode, FileJson, AlertCircle, X, Code, File, Save, Eye, Edit2, Edit } from "lucide-react";
+import { useFiles, FileItem, TabItem } from "./context/files-context";
+import { FileText, FileCode, FileJson, X } from "lucide-react";
 import { dbService } from "@/lib/indexeddb-service";
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown from "react-markdown";
 
-// Component for displaying code with syntax highlighting-like styling
-function CodeViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
+// Reusable Code Viewer component
+function CodeViewer({ content }: { content: string }) {
   return (
-    <div className="w-full h-full">
-      <textarea
-        className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
-        value={content}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-      />
+    <div className="p-4 bg-gray-50 border border-gray-200 overflow-auto h-full">
+      <pre className="text-sm font-mono whitespace-pre-wrap break-words text-gray-800">
+        {content}
+      </pre>
     </div>
   );
 }
 
-// Component for displaying markdown-like content
-function MarkdownViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
-  const [isEditing, setIsEditing] = useState(false);
-  
+// Reusable TextViewer component
+function TextViewer({ content }: { content: string }) {
   return (
-    <div className="w-full h-full flex flex-col">
-      <div className="flex justify-end p-2 bg-gray-50 border-b">
-        <button 
-          onClick={() => setIsEditing(!isEditing)}
-          className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded flex items-center"
-        >
-          {isEditing ? (
-            <>
-              <Eye size={14} className="mr-1" />
-              Preview
-            </>
-          ) : (
-            <>
-              <Edit2 size={14} className="mr-1" />
-              Edit
-            </>
-          )}
-        </button>
-      </div>
-      
-      <div className="flex-1 overflow-auto">
-        {isEditing ? (
-          <textarea
-            className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
-            value={content}
-            onChange={(e) => onChange(e.target.value)}
-            spellCheck={false}
-          />
-        ) : (
-          <div className="markdown-body p-4 overflow-auto">
-            <ReactMarkdown>{content}</ReactMarkdown>
-          </div>
-        )}
-      </div>
+    <div className="p-4 overflow-auto h-full">
+      <pre className="whitespace-pre-wrap break-words text-gray-800 text-sm">
+        {content}
+      </pre>
     </div>
   );
 }
 
-// Component for displaying plain text
-function TextViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
+// Markdown Viewer component
+function MarkdownViewer({ content }: { content: string }) {
   return (
-    <div className="w-full h-full">
-      <textarea
-        className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
-        value={content}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-      />
+    <div className="p-4 overflow-auto h-full prose prose-sm max-w-none">
+      <ReactMarkdown
+        components={{
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          p: ({node: _node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ul: ({node: _node, ...props}) => <ul className="mb-3 last:mb-0 pl-5" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ol: ({node: _node, ...props}) => <ol className="mb-3 last:mb-0 pl-5" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          pre: ({node: _node, ...props}) => <pre className="mb-3 last:mb-0 p-2 bg-gray-100 overflow-x-auto rounded text-xs" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          code: ({node: _node, className, ...props}) => {
+            const match = /language-(\w+)/.exec(className || '');
+            const isInline = !match && !className?.includes('language-');
+            return isInline 
+              ? <code className="bg-gray-100 px-1 py-0.5 rounded text-xs" {...props} />
+              : <code className="block" {...props} />;
+          },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          h1: ({node: _node, ...props}) => <h1 className="text-2xl font-bold mt-6 mb-4" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          h2: ({node: _node, ...props}) => <h2 className="text-xl font-bold mt-5 mb-3" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          h3: ({node: _node, ...props}) => <h3 className="text-lg font-bold mt-4 mb-2" {...props} />
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
 
-// Component for displaying JSON
-function JsonViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      // Validate JSON
-      JSON.parse(content);
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, [content]);
-
-  return (
-    <div className="w-full h-full relative">
-      <textarea
-        className={`w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none ${error ? 'border-red-500' : ''}`}
-        value={content}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-      />
-      {error && (
-        <div className="absolute bottom-0 left-0 right-0 bg-red-100 text-red-800 p-2 text-xs font-mono">
-          {error}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Component for displaying PDFs
-function PdfViewer({ content }: { content: string }) {
-  const [error, setError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string>("");
-  const [pdfObjectURL, setPdfObjectURL] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Clean up previous object URL if it exists
-    if (pdfObjectURL) {
-      URL.revokeObjectURL(pdfObjectURL);
-      setPdfObjectURL(null);
-    }
-
-    if (!content) {
-      setError("No PDF content available");
-      setDebugInfo("Content is empty");
-      return;
-    }
-
-    try {
-      // Try to convert base64 content to Blob for more reliable display
-      if (content.includes('base64')) {
-        // Extract the base64 part from the data URL
-        const base64Match = content.match(/base64,(.+)$/);
-        
-        if (base64Match && base64Match[1]) {
-          const base64Data = base64Match[1];
-          
-          try {
-            // Convert base64 to binary
-            const binaryData = atob(base64Data);
-            const array = new Uint8Array(binaryData.length);
-            
-            // Fill the array with byte values
-            for (let i = 0; i < binaryData.length; i++) {
-              array[i] = binaryData.charCodeAt(i);
-            }
-            
-            // Create blob and object URL
-            const blob = new Blob([array], { type: 'application/pdf' });
-            const objectURL = URL.createObjectURL(blob);
-            
-            // Set the object URL as the source
-            setPdfObjectURL(objectURL);
-            setError(null);
-            setDebugInfo("Successfully created object URL");
-            return;
-          } catch (e) {
-            console.error("Error converting base64 to blob:", e);
-            setDebugInfo(`Base64 conversion error: ${e instanceof Error ? e.message : String(e)}`);
-          }
-        } else {
-          setDebugInfo("Couldn't extract base64 data from content");
-        }
-      }
-
-      // If we reached here, either the content is not in base64 format
-      // or there was an error processing it
-      setError("Unable to display PDF");
-      if (!debugInfo) {
-        setDebugInfo(`Content format not recognized. Content starts with: ${content.substring(0, 30)}...`);
-      }
-    } catch (e) {
-      setError("Error processing PDF");
-      setDebugInfo(`Exception: ${e instanceof Error ? e.message : String(e)}`);
-      console.error("PDF processing error:", e);
-    }
-  }, [content]);
-
-  // Cleanup object URL when component unmounts
-  useEffect(() => {
-    return () => {
-      if (pdfObjectURL) {
-        URL.revokeObjectURL(pdfObjectURL);
-      }
-    };
-  }, [pdfObjectURL]);
-
-  // Show error state if we have an error or no content
-  if (error || !pdfObjectURL) {
+// Reusable JsonViewer component
+function JsonViewer({ content }: { content: string }) {
+  try {
+    const jsonObj = JSON.parse(content);
+    const formattedJson = JSON.stringify(jsonObj, null, 2);
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
-        <FileText size={48} className="mb-4" />
-        <p className="text-red-500 font-medium mb-2">Error loading PDF</p>
-        <p className="text-sm">{error || "Failed to process PDF data"}</p>
-        {debugInfo && (
-          <div className="mt-4 p-3 bg-gray-100 text-xs font-mono max-w-md overflow-auto rounded">
-            <p className="mb-2 font-semibold">Debug information:</p>
-            <p className="whitespace-pre-wrap break-all">{debugInfo}</p>
-          </div>
-        )}
+      <div className="p-4 overflow-auto h-full">
+        <pre className="text-sm font-mono whitespace-pre-wrap break-words text-gray-800">
+          {formattedJson}
+        </pre>
+      </div>
+    );
+  } catch {
+    return (
+      <div className="p-4 overflow-auto h-full">
+        <div className="flex items-center text-red-500 mb-2">
+          <span>Invalid JSON</span>
+        </div>
+        <pre className="text-sm font-mono whitespace-pre-wrap break-words text-gray-800">
+          {content}
+        </pre>
       </div>
     );
   }
-  
-  // Only render iframe when we have valid content
+}
+
+// Simple PDF Viewer that uses browser's built-in capabilities
+function PdfViewer({ content }: { content: string }) {
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Convert content to URL that can be used by browser
+  useEffect(() => {
+    // Clean up previous URL
+    if (pdfUrl) {
+      URL.revokeObjectURL(pdfUrl);
+    }
+
+    try {
+      // If content is a base64 data URL
+      if (content.startsWith('data:application/pdf;base64,')) {
+        try {
+          const base64Data = content.split(',')[1];
+          if (!base64Data) {
+            throw new Error('Invalid PDF data URL');
+          }
+
+          // Convert base64 to binary
+          const binaryData = atob(base64Data);
+          const byteArray = new Uint8Array(binaryData.length);
+          for (let i = 0; i < binaryData.length; i++) {
+            byteArray[i] = binaryData.charCodeAt(i);
+          }
+
+          // Create blob and object URL
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          setPdfUrl(url);
+          setError(null);
+        } catch (e) {
+          console.error('Error processing PDF data:', e);
+          setError('Could not process PDF data');
+        }
+      } 
+      // If content is already a URL
+      else if (content.startsWith('http')) {
+        setPdfUrl(content);
+        setError(null);
+      } 
+      // If content is raw PDF data
+      else {
+        try {
+          // Try to create a blob from raw data
+          const blob = new Blob([content], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          setPdfUrl(url);
+          setError(null);
+        } catch (e) {
+          console.error('Error creating PDF URL from raw data:', e);
+          setError('Could not create PDF from raw data');
+        }
+      }
+    } catch (e) {
+      console.error('PDF processing error:', e);
+      setError('Error processing PDF');
+    }
+
+    // Clean up when component unmounts
+    return () => {
+      if (pdfUrl && pdfUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+    };
+  }, [content]);
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-500">
+        <p>{error}</p>
+        <p className="text-sm text-gray-500 mt-2">
+          The PDF data could not be processed. This may be due to an unsupported format or corrupt data.
+        </p>
+      </div>
+    );
+  }
+
+  if (!pdfUrl) {
+    return (
+      <div className="p-4">
+        <p>Loading PDF...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="h-full w-full flex flex-col">
       <object
-        data={pdfObjectURL}
+        data={pdfUrl}
         type="application/pdf"
-        className="w-full h-full"
+        className="w-full h-full border-0"
       >
-        <iframe 
-          src={pdfObjectURL} 
-          className="w-full h-full border-0"
-          title="PDF Viewer"
-        />
+        <div className="w-full h-full flex flex-col items-center justify-center">
+          <p className="mb-4">Unable to display PDF directly.</p>
+          <a 
+            href={pdfUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Open PDF in new tab
+          </a>
+        </div>
       </object>
     </div>
   );
 }
 
-// Get file icon based on file type/extension
-function getFileIcon(fileName: string, mimeType?: string) {
-  // Check for PDF files
-  if (mimeType === "application/pdf" || fileName.toLowerCase().endsWith('.pdf')) {
-    return <FileText size={16} className="mr-2 text-red-500" />;
+// Helper to get the correct viewer component based on file
+function getFileViewerComponent(file: FileItem | null) {
+  if (!file || !file.content) {
+    return TextViewer; // Default or show an error/placeholder
+  }
+
+  const { mimeType, name } = file;
+
+  if (mimeType === 'application/pdf' || name.toLowerCase().endsWith('.pdf')) {
+    return PdfViewer;
   }
   
-  // Check for Word files
-  if (mimeType === "application/msword" || 
-      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx')) {
-    return <FileText size={16} className="mr-2 text-blue-700" />;
+  if (mimeType === "application/javascript" || name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".ts") || name.endsWith(".tsx")) {
+    return CodeViewer;
+  }
+
+  if (mimeType === "text/css" || name.endsWith(".css")) {
+    return CodeViewer;
+  }
+
+  if (mimeType === "application/json" || name.endsWith(".json")) {
+    return JsonViewer;
   }
   
-  // Check for code files
-  if (mimeType === "application/javascript" || mimeType === "application/typescript" || 
-      mimeType?.includes("jsx") || mimeType?.includes("tsx") ||
-      fileName.endsWith(".js") || fileName.endsWith(".jsx") || fileName.endsWith(".ts") || 
-      fileName.endsWith(".tsx") || fileName.endsWith(".css") || fileName.endsWith(".html")) {
-    return <FileCode size={16} className="mr-2 text-blue-500" />;
+  if (mimeType === "text/markdown" || name.toLowerCase().endsWith('.md')) {
+    return MarkdownViewer;
   }
 
-  // Check for JSON files
-  if (mimeType === "application/json" || fileName.endsWith(".json")) {
-    return <FileJson size={16} className="mr-2 text-green-500" />;
-  }
-
-  // Check for markdown files
-  if (mimeType === "text/markdown" || fileName.endsWith(".md")) {
-    return <FileText size={16} className="mr-2 text-purple-500" />;
-  }
-
-  // Default file icon
-  return <FileText size={16} className="mr-2 text-gray-500" />;
+  return TextViewer;
 }
 
+// Main Viewer component
 export default function Viewer() {
   const { 
-    selectedFile, 
     openTabs, 
     activeTabId, 
     setActiveTab, 
     closeTab,
+    files,
+    findFileById,
     refreshFile
   } = useFiles();
-  
-  const [fileContents, setFileContents] = useState<Record<string, string>>({});
-  const [isSaving, setIsSaving] = useState(false);
-  const [isEditMode, setIsEditMode] = useState<Record<string, boolean>>({});
+
+  const [editMode, setEditMode] = useState(false);
+  const [editedContent, setEditedContent] = useState<string | null>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Load content when selectedFile changes
+  const activeTab = openTabs.find(tab => tab.id === activeTabId);
+  const activeFile = activeTab ? findFileById(activeTab.fileId, files) : null;
+
+  // Load initial content when active file changes or edit mode is toggled
   useEffect(() => {
-    if (selectedFile && selectedFile.content !== undefined) {
-      setFileContents(prev => ({
-        ...prev,
-        [selectedFile.id]: selectedFile.content || ''
-      }));
+    if (activeFile?.content) {
+      setEditedContent(activeFile.content);
+    } else {
+      setEditedContent(null);
     }
-  }, [selectedFile]);
-  
-  // Make the save button and edit mode toggle accessible to other components
-  useEffect(() => {
-    // Expose the functionality via the DOM for parent components
-    const handleExternalSave = () => {
-      saveActiveFile();
-    };
+  }, [activeFile, editMode]);
 
-    const handleToggleEditMode = () => {
-      if (!activeTabId) return;
-      
-      const activeTab = openTabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        toggleEditMode(activeTab.fileId);
-      }
-    };
+  // Function to save the currently active file
+  const saveActiveFile = useCallback(async () => {
+    if (!activeFile || editedContent === null) return;
 
-    const handleDownloadFile = () => {
-      if (!activeTabId) return;
-      
-      const activeTab = openTabs.find(tab => tab.id === activeTabId);
-      if (activeTab && activeTab.fileId) {
-        const content = fileContents[activeTab.fileId];
-        if (content) {
-          // Create a blob and download it
-          const blob = new Blob([content], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = activeTab.fileName || 'download.txt';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
-      }
-    };
-
-    // Create global functions that can be called by other components
-    const win = window as any;
-    win._editorSaveFile = handleExternalSave;
-    win._editorToggleEditMode = handleToggleEditMode;
-    win._editorDownloadFile = handleDownloadFile;
-
-    return () => {
-      // Clean up when component unmounts
-      delete win._editorSaveFile;
-      delete win._editorToggleEditMode;
-      delete win._editorDownloadFile;
-    };
-  }, [activeTabId, openTabs, fileContents]);
-
-  // Check if file is editable
-  const isFileEditable = (mimeType?: string, fileName?: string) => {
-    // Files that are not editable
-    if (!mimeType || !fileName) return false;
-    
-    if (mimeType === 'application/pdf') return false;
-    if (mimeType === 'application/msword' || 
-        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        fileName.toLowerCase().endsWith('.doc') || 
-        fileName.toLowerCase().endsWith('.docx')) return false;
-    
-    // All other files are considered editable
-    return true;
-  };
-
-  // Toggle edit mode for a file
-  const toggleEditMode = (fileId: string) => {
-    setIsEditMode(prev => ({
-      ...prev,
-      [fileId]: !prev[fileId]
-    }));
-  };
-
-  // Update file content in state
-  const handleContentChange = useCallback((fileId: string, content: string) => {
-    setFileContents(prev => ({
-      ...prev,
-      [fileId]: content
-    }));
-  }, []);
-
-  const handleSaveFile = async (fileId: string) => {
-    // Validate inputs
-    if (!fileId) {
-      console.error("Cannot save: No fileId provided");
-      return;
-    }
-    
-    const content = fileContents[fileId];
-    if (content === undefined) {
-      console.error("Cannot save: No content found for fileId", fileId);
-      return;
-    }
-
-    setIsSaving(true);
-    console.log("Saving file:", fileId);
-    
+    console.log("Saving file:", activeFile.name);
     try {
-      // Get the current file
-      const allFiles = await dbService.getAllFiles();
-      console.log("Retrieved files from DB:", allFiles.length);
-      
-      const fileToUpdate = allFiles.find(f => f.id === fileId);
-      
-      if (!fileToUpdate) {
-        throw new Error(`File with ID ${fileId} not found in database`);
-      }
-      
-      console.log("Found file to update:", fileToUpdate.name);
-      
-      // Update the content
-      const updatedFile = {
-        ...fileToUpdate,
-        content
-      };
-      
-      // Save to IndexedDB
-      console.log("Updating file in DB:", updatedFile.name);
+      const updatedFile = { ...activeFile, content: editedContent };
       await dbService.updateFile(updatedFile);
-      console.log("File saved successfully:", updatedFile.name);
+      console.log("File updated successfully in DB:", updatedFile.name);
       
-      // Update the file in context to avoid requiring a refresh
-      if (refreshFile) {
-        refreshFile(updatedFile);
-      }
-      
-      // Exit edit mode after saving
-      setIsEditMode(prev => ({
-        ...prev,
-        [fileId]: false
-      }));
-      
-      // Show a success indicator with React state
-      setIsSaving(false);
-      
-      // Create temporary success notification
-      const container = document.createElement('div');
-      container.className = 'fixed bottom-4 right-4 z-50 bg-green-100 text-green-800 px-4 py-2 rounded shadow-lg';
-      container.innerHTML = `
-        <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-          </svg>
-          <span>File saved successfully</span>
-        </div>
-      `;
-      document.body.appendChild(container);
-      
-      setTimeout(() => {
-        if (document.body.contains(container)) {
-          document.body.removeChild(container);
-        }
-      }, 2000);
+      refreshFile(updatedFile);
+      setEditMode(false);
       
     } catch (error) {
       console.error("Error saving file:", error);
-      
-      // Log more details about the error
-      if (error instanceof Error) {
-        console.error("Error details:", error.message);
-        console.error("Error stack:", error.stack);
-      }
-      
-      // Show error notification
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Failed to save file: ${errorMessage}`);
-    } finally {
-      setIsSaving(false);
     }
-  };
+  }, [activeFile, editedContent, refreshFile]);
 
-  // Save the current active file
-  const saveActiveFile = () => {
-    if (!activeTabId) {
-      console.log("No active tab to save");
+  // Expose save function to the window object
+  useEffect(() => {
+    const win = window as any;
+    win._editorSaveFile = saveActiveFile;
+    return () => {
+      delete win._editorSaveFile;
+    };
+  }, [saveActiveFile]);
+
+  // Handle toggling edit mode
+  const handleToggleEditMode = useCallback(() => {
+    if (!activeFile || activeFile.mimeType === 'application/pdf') {
+      console.log("Editing not supported for this file type or no file is active.");
       return;
     }
+    setEditMode(prev => {
+      const nextEditMode = !prev;
+      // Reset edited content if exiting edit mode without saving
+      if (!nextEditMode && activeFile?.content) {
+        setEditedContent(activeFile.content);
+      }
+      return nextEditMode;
+    });
+  }, [activeFile]);
+
+  // Expose toggle edit mode function to the window object
+  useEffect(() => {
+    const win = window as any;
+    win._editorToggleEditMode = handleToggleEditMode;
+    return () => {
+      delete win._editorToggleEditMode;
+    };
+  }, [handleToggleEditMode]);
+
+  // Handle downloading the active file
+  const handleDownloadFile = useCallback(() => {
+    if (!activeFile || !activeFile.content) return;
+
+    const blob = new Blob([activeFile.content], { type: activeFile.mimeType || 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = activeFile.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [activeFile]);
+
+  // Expose download function to the window object
+  useEffect(() => {
+    const win = window as any;
+    win._editorDownloadFile = handleDownloadFile;
+    return () => {
+      delete win._editorDownloadFile;
+    };
+  }, [handleDownloadFile]);
+
+  // Helper to get file for a tab
+  const getFileForTab = (tab: TabItem): FileItem | null => {
+    return findFileById(tab.fileId, files);
+  };
+  
+  // Helper function to get the appropriate icon for a file
+  function getFileIcon(file: FileItem) {
+    const { mimeType, name } = file;
     
-    const activeTab = openTabs.find(tab => tab.id === activeTabId);
-    if (activeTab) {
-      console.log("Saving file for tab:", activeTab.fileName);
-      handleSaveFile(activeTab.fileId);
-    } else {
-      console.error("Active tab not found in openTabs:", activeTabId);
+    if (mimeType === "application/javascript" || mimeType === "text/css" || 
+        name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".ts") || 
+        name.endsWith(".tsx") || name.endsWith(".css")) {
+      return <FileCode size={16} className="mr-1" />;
     }
-  };
 
-  const isPdfFile = (mimeType?: string) => {
-    return mimeType === 'application/pdf';
-  };
-
-  // Modify the renderFileContent function to handle edit mode
-  const renderFileContent = (fileId: string, mimeType?: string) => {
-    const content = fileContents[fileId] || '';
-    const isEditable = isFileEditable(mimeType, openTabs.find(tab => tab.fileId === fileId)?.fileName);
-    const editMode = isEditMode[fileId] || false;
-    
-    if (!mimeType) return <div className="p-4">Unknown file type</div>;
-    
-    if (isPdfFile(mimeType)) {
-      // For PDFs, we don't need to handle changes as they're not editable
-      return <PdfViewer content={content} />;
-    } else if (
-      mimeType === "application/msword" || 
-      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      fileId.toLowerCase().endsWith('.doc') || 
-      fileId.toLowerCase().endsWith('.docx')
-    ) {
-      // Word documents aren't directly viewable in the browser
-      return (
-        <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
-          <FileText size={48} className="mb-4 text-blue-700" />
-          <p className="font-medium mb-2">Word Document</p>
-          <p className="text-sm">Word documents can be downloaded but not previewed</p>
-          <button 
-            className="mt-4 px-4 py-2 bg-blue-50 text-blue-500 rounded border border-blue-200 hover:bg-blue-100"
-            onClick={() => {
-              // Let user download the file
-              if (content && (content.startsWith('data:') || content.includes('base64'))) {
-                const a = document.createElement('a');
-                a.href = content;
-                a.download = openTabs.find(tab => tab.fileId === fileId)?.fileName || 'document.docx';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-              } else {
-                alert('No file data available for download');
-              }
-            }}
-          >
-            Download Document
-          </button>
-        </div>
-      );
-    } else if (mimeType.startsWith('application/javascript') || 
-        mimeType.startsWith('application/typescript') || 
-        mimeType.includes('html') || 
-        mimeType.includes('css') || 
-        mimeType.includes('xml')) {
-      // For code files, only show editor in edit mode
-      return editMode ? (
-        <CodeViewer 
-          content={content}
-          onChange={(value) => handleContentChange(fileId, value)}
-        />
-      ) : (
-        <div className="w-full h-full overflow-auto">
-          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
-            {content}
-          </pre>
-        </div>
-      );
-    } else if (mimeType === 'text/markdown' || fileId.toLowerCase().endsWith('.md')) {
-      // For markdown files, show editor in edit mode, markdown rendered otherwise
-      return editMode ? (
-        <textarea
-          className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
-          value={content}
-          onChange={(e) => handleContentChange(fileId, e.target.value)}
-          spellCheck={false}
-        />
-      ) : (
-        <div className="markdown-body p-4 overflow-auto">
-          <ReactMarkdown>{content}</ReactMarkdown>
-        </div>
-      );
-    } else if (mimeType === 'application/json' || fileId.toLowerCase().endsWith('.json')) {
-      // For JSON files
-      return editMode ? (
-        <JsonViewer 
-          content={content}
-          onChange={(value) => handleContentChange(fileId, value)}
-        />
-      ) : (
-        <div className="w-full h-full overflow-auto">
-          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
-            {syntaxHighlightJSON(content)}
-          </pre>
-        </div>
-      );
-    } else {
-      // For other text files
-      return editMode ? (
-        <TextViewer 
-          content={content}
-          onChange={(value) => handleContentChange(fileId, value)}
-        />
-      ) : (
-        <div className="w-full h-full overflow-auto">
-          <pre className="p-4 font-mono text-sm whitespace-pre-wrap">
-            {content}
-          </pre>
-        </div>
-      );
+    if (mimeType === "application/json" || name.endsWith(".json")) {
+      return <FileJson size={16} className="mr-1" />;
     }
-  };
 
-  // Simple JSON syntax highlighting for view mode
-  const syntaxHighlightJSON = (json: string) => {
-    try {
-      // Format the JSON with indentation
-      const obj = JSON.parse(json);
-      const formatted = JSON.stringify(obj, null, 2);
-      return formatted;
-    } catch (e) {
-      // If JSON is invalid, return as-is
-      return json;
-    }
-  };
+    return <FileText size={16} className="mr-1" />;
+  }
 
-  // If no file is selected
+  // Determine which viewer component to use
+  const ViewerComponent = getFileViewerComponent(activeFile);
+  
   if (openTabs.length === 0) {
     return (
-      <div className="h-full w-full flex items-center justify-center bg-white">
-        <div className="text-center">
-          <File size={48} className="mx-auto text-gray-300" />
-          <p className="mt-2 text-gray-500">No files are open</p>
-          <p className="text-sm text-gray-400">Click on a file in the Files panel to open it</p>
-        </div>
+      <div className="h-full w-full flex flex-col items-center justify-center text-gray-500 bg-white">
+        <FileText size={48} strokeWidth={1} className="mb-4" />
+        <p>Select or upload a file to view</p>
       </div>
     );
   }
@@ -611,7 +375,8 @@ export default function Viewer() {
       <div className="flex border-b overflow-x-auto">
         {openTabs.map(tab => {
           const isActive = tab.id === activeTabId;
-          const fileId = tab.fileId;
+          const file = getFileForTab(tab);
+          if (!file) return null;
           
           return (
             <div 
@@ -623,7 +388,7 @@ export default function Viewer() {
               onClick={() => setActiveTab(tab.id)}
               title={tab.fileName}
             >
-              {getFileIcon(tab.fileName, tab.mimeType)}
+              {getFileIcon(file)}
               <span className="text-sm font-medium mr-1 truncate max-w-[100px]">{tab.fileName}</span>
               <button 
                 className="ml-1 p-1 rounded-full hover:bg-gray-200"
@@ -650,30 +415,22 @@ export default function Viewer() {
       />
       
       {/* Content area */}
-      <div className="flex-1 overflow-auto relative">
-        {activeTabId && (
-          <>
-            {/* Save indicator */}
-            {isSaving && (
-              <div className="absolute top-2 right-2 z-10 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
-                Saving...
-              </div>
-            )}
-            
-            {/* File content */}
-            <div className="h-full">
-              {openTabs.map(tab => {
-                if (tab.id === activeTabId) {
-                  return (
-                    <div key={`content-${tab.id}`} className="h-full">
-                      {renderFileContent(tab.fileId, tab.mimeType)}
-                    </div>
-                  );
-                }
-                return null;
-              })}
-            </div>
-          </>
+      <div className="flex-1 overflow-hidden">
+        {activeFile ? (
+          editMode ? (
+            <textarea
+              className="w-full h-full p-4 border-none resize-none focus:outline-none font-mono text-sm"
+              value={editedContent || ''}
+              onChange={(e) => setEditedContent(e.target.value)}
+            />
+          ) : (
+            <ViewerComponent content={activeFile.content || ''} />
+          )
+        ) : (
+          <div className="h-full w-full flex flex-col items-center justify-center text-gray-500">
+            <FileText size={48} strokeWidth={1} className="mb-4" />
+            <p>Select a file to view</p>
+          </div>
         )}
       </div>
     </div>

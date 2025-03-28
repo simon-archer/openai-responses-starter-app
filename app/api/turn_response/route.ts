@@ -6,6 +6,7 @@ export async function POST(request: Request) {
   try {
     const { messages, tools } = await request.json();
     console.log("Received messages:", messages);
+    console.log("Available tools:", tools.map((t: any) => t.name));
 
     const openai = new OpenAI();
 
@@ -22,6 +23,29 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           for await (const event of events) {
+            // Log different types of events
+            switch (event.type) {
+              case "response.output_text.delta":
+                console.log("[Assistant Response]", event.delta);
+                break;
+              case "response.function_call_arguments.delta":
+                console.log("[Tool Call Args]", {
+                  args: event.delta
+                });
+                break;
+              case "response.function_call_arguments.done":
+                console.log("[Tool Call Complete]", {
+                  args: event.arguments
+                });
+                break;
+              case "response.web_search_call.completed":
+                console.log("[Web Search Complete]", event);
+                break;
+              case "response.file_search_call.completed":
+                console.log("[File Search Complete]", event);
+                break;
+            }
+
             // Sending all events to the client
             const data = JSON.stringify({
               event: event.type,

@@ -1,13 +1,15 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { Folder, File, ChevronRight, ChevronDown, Trash2, MoreHorizontal, FileText, FileCode, FileJson } from "lucide-react";
+import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
 
 // Get file icon based on file type/extension
 function getFileIcon(fileName: string, mimeType?: string) {
-  // Check for PDF files
-  if (mimeType === "application/pdf" || fileName.toLowerCase().endsWith('.pdf')) {
-    return <FileText size={16} className="text-red-500" />;
+  // Check for Word files
+  if (mimeType === "application/msword" || 
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx')) {
+    return <FileText size={16} className="mr-2 text-blue-700" />; 
   }
   
   // Check for code files
@@ -15,21 +17,21 @@ function getFileIcon(fileName: string, mimeType?: string) {
       mimeType?.includes("jsx") || mimeType?.includes("tsx") ||
       fileName.endsWith(".js") || fileName.endsWith(".jsx") || fileName.endsWith(".ts") || 
       fileName.endsWith(".tsx") || fileName.endsWith(".css") || fileName.endsWith(".html")) {
-    return <FileCode size={16} className="text-blue-500" />;
+    return <FileCode size={16} className="mr-2 text-blue-500" />;
   }
 
   // Check for JSON files
   if (mimeType === "application/json" || fileName.endsWith(".json")) {
-    return <FileJson size={16} className="text-green-500" />;
+    return <FileJson size={16} className="mr-2 text-green-500" />;
   }
 
   // Check for markdown files
   if (mimeType === "text/markdown" || fileName.endsWith(".md")) {
-    return <FileText size={16} className="text-purple-500" />;
+    return <FileText size={16} className="mr-2 text-purple-500" />;
   }
 
   // Default file icon
-  return <FileText size={16} className="text-gray-500" />;
+  return <FileText size={16} className="mr-2 text-gray-500" />;
 }
 
 export default function FilesPanel() {
@@ -173,7 +175,7 @@ export default function FilesPanel() {
                 }}
                 aria-label="File actions"
               >
-                <MoreHorizontal size={14} />
+                <MoreVertical size={14} />
               </button>
             </div>
             {item.type === 'folder' && expandedFolders[item.id] && item.children && (
