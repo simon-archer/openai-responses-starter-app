@@ -4,7 +4,15 @@ import { Folder, File, ChevronRight, ChevronDown } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
 
 export default function FilesPanel() {
-  const { files, expandedFolders, isLoading, toggleFolder } = useFiles();
+  const { 
+    files, 
+    expandedFolders, 
+    isLoading, 
+    toggleFolder, 
+    selectFile, 
+    selectedFileId,
+    openFileInTab 
+  } = useFiles();
 
   const renderFileTree = (items: FileItem[], level = 0) => {
     return (
@@ -14,9 +22,17 @@ export default function FilesPanel() {
             <div 
               className={`
                 flex items-center py-1 px-2 rounded-md text-sm
-                ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'}
+                ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100' : 'cursor-pointer hover:bg-gray-100'}
+                ${item.type === 'file' && item.id === selectedFileId ? 'bg-gray-100 font-medium' : ''}
               `}
-              onClick={() => item.type === 'folder' && toggleFolder(item.id)}
+              onClick={() => {
+                if (item.type === 'folder') {
+                  toggleFolder(item.id);
+                } else {
+                  selectFile(item.id);
+                  openFileInTab(item.id);
+                }
+              }}
             >
               {item.type === 'folder' ? (
                 <>

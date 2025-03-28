@@ -7,15 +7,16 @@ import ToolsPanel from "@/components/tools-panel";
 import ConversationSidebar from "@/components/conversation-sidebar";
 import ResizablePanel from "@/components/resizable-panel";
 import FilesPanel from "@/components/files-panel";
+import Editor from "@/components/editor";
 
 // Panel content types
-type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files";
+type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Editor";
 
 // Panel selector component
 function PanelSelector({ 
   currentType, 
   onChange,
-  allowedTypes = ["Conversations", "Chat", "Tools", "Files"]
+  allowedTypes = ["Conversations", "Chat", "Tools", "Files", "Editor"]
 }: { 
   currentType: PanelContentType; 
   onChange: (type: PanelContentType) => void;
@@ -64,7 +65,7 @@ export default function Main() {
   // Panel content type state
   const [leftPanelType, setLeftPanelType] = useState<PanelContentType>("Conversations");
   const [centerPanelType, setCenterPanelType] = useState<PanelContentType>("Chat");
-  const [rightPanelType, setRightPanelType] = useState<PanelContentType>("Tools");
+  const [rightPanelType, setRightPanelType] = useState<PanelContentType>("Editor");
 
   // Panel content renderer
   const renderPanelContent = (type: PanelContentType) => {
@@ -77,6 +78,8 @@ export default function Main() {
         return <ToolsPanel />;
       case "Files":
         return <FilesPanel />;
+      case "Editor":
+        return <Editor />;
     }
   };
 
