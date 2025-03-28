@@ -1,6 +1,6 @@
 "use client";
-import { Menu, X, ChevronDown } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Menu, X, ChevronDown, Upload, FolderPlus, Save } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
 import ToolsPanel from "@/components/tools-panel";
@@ -8,6 +8,7 @@ import ConversationSidebar from "@/components/conversation-sidebar";
 import ResizablePanel from "@/components/resizable-panel";
 import FilesPanel from "@/components/files-panel";
 import Editor from "@/components/editor";
+import { useFiles, TabItem } from "@/components/context/files-context";
 
 // Panel content types
 type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Editor";
@@ -23,35 +24,117 @@ function PanelSelector({
   allowedTypes?: PanelContentType[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Files context for file operations
+  const filesContext = useFiles();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Render panel-specific actions based on currentType
+  const renderPanelActions = () => {
+    switch (currentType) {
+      case "Files":
+        return (
+          <div className="flex items-center space-x-2">
+            <button 
+              className="p-1 rounded hover:bg-gray-100"
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload File"
+            >
+              <Upload size={16} />
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                className="hidden" 
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  
+                  // Upload each file
+                  for (let i = 0; i < files.length; i++) {
+                    filesContext.uploadFile(files[i]);
+                  }
+                  
+                  // Reset the file input
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                }}
+                multiple
+                accept=".txt,.js,.jsx,.ts,.tsx,.css,.html,.json,.md,.pdf"
+              />
+            </button>
+            <button 
+              className="p-1 rounded hover:bg-gray-100"
+              onClick={() => {
+                const folderName = prompt("Enter folder name:");
+                if (folderName && folderName.trim() !== "") {
+                  filesContext.createFolder(folderName);
+                }
+              }}
+              title="New Folder"
+            >
+              <FolderPlus size={16} />
+            </button>
+          </div>
+        );
+      case "Editor":
+        return (
+          <div className="flex items-center space-x-2">
+            {filesContext.activeTabId && (
+              <button
+                className="flex items-center px-2 py-1 bg-black text-white text-xs rounded hover:bg-gray-800"
+                onClick={() => {
+                  // Get the Editor component to save the file
+                  const editorRef = document.querySelector('[data-editor-save]');
+                  if (editorRef) {
+                    (editorRef as HTMLButtonElement).click();
+                  }
+                }}
+              >
+                <Save size={14} className="mr-1" />
+                Save
+              </button>
+            )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="relative">
-      <button 
-        onClick={() => setIsOpen(!isOpen)} 
-        className="flex items-center gap-1 text-lg font-medium hover:opacity-80"
-      >
-        {currentType}
-        <ChevronDown size={16} />
-      </button>
+    <div className="flex items-center justify-between w-full">
+      <div className="relative">
+        <button 
+          onClick={() => setIsOpen(!isOpen)} 
+          className="flex items-center gap-1 text-lg font-medium hover:opacity-80"
+        >
+          {currentType}
+          <ChevronDown size={16} />
+        </button>
+        
+        {isOpen && (
+          <div className="absolute top-full left-0 mt-1 bg-white shadow-md rounded-md z-10 min-w-32">
+            {allowedTypes.map((type) => (
+              <button
+                key={type}
+                className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
+                  type === currentType ? "font-medium" : ""
+                }`}
+                onClick={() => {
+                  onChange(type);
+                  setIsOpen(false);
+                }}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white shadow-md rounded-md z-10 min-w-32">
-          {allowedTypes.map((type) => (
-            <button
-              key={type}
-              className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
-                type === currentType ? "font-medium" : ""
-              }`}
-              onClick={() => {
-                onChange(type);
-                setIsOpen(false);
-              }}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Panel-specific actions */}
+      {renderPanelActions()}
     </div>
   );
 }

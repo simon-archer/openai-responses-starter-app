@@ -11,7 +11,7 @@ export default function FilesPanel() {
     toggleFolder, 
     selectFile, 
     selectedFileId,
-    openFileInTab 
+    openFileInTab
   } = useFiles();
 
   const renderFileTree = (items: FileItem[], level = 0) => {
