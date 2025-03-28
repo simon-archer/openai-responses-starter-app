@@ -40,6 +40,7 @@ export const handleTurn = async (
   tools: any[],
   onMessage: (data: any) => void
 ) => {
+  const assistantResponse = null;
   try {
     // Get response from the API (defined in app/api/turn_response/route.ts)
     const response = await fetch("/api/turn_response", {
@@ -95,6 +96,8 @@ export const handleTurn = async (
   } catch (error) {
     console.error("Error handling turn:", error);
   }
+  
+  return assistantResponse;
 };
 
 export const processMessages = async () => {
@@ -104,6 +107,9 @@ export const processMessages = async () => {
     setChatMessages,
     setConversationItems,
   } = useConversationStore.getState();
+  
+  // This will hold the assistant's response to be returned
+  let assistantResponseToReturn = null;
 
   const tools = getTools();
   const allConversationItems = [
@@ -165,6 +171,17 @@ export const processMessages = async () => {
         }
 
         setChatMessages([...chatMessages]);
+        
+        // Store the assistant response for saving to database and returning
+        assistantResponseToReturn = {
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: assistantMessageContent,
+            annotations: lastItem?.type === "message" ? lastItem.content[0]?.annotations || [] : []
+          }]
+        };
         break;
       }
 
@@ -336,4 +353,7 @@ export const processMessages = async () => {
       // Handle other events as needed
     }
   });
+  
+  // Return the assistant response for saving to database
+  return assistantResponseToReturn;
 };
