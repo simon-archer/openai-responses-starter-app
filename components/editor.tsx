@@ -1,8 +1,9 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useFiles } from "./context/files-context";
-import { FileText, FileCode, FileJson, AlertCircle, X, Code, File, Save } from "lucide-react";
+import { FileText, FileCode, FileJson, AlertCircle, X, Code, File, Save, Eye, Edit2 } from "lucide-react";
 import { dbService } from "@/lib/indexeddb-service";
+import ReactMarkdown from 'react-markdown';
 
 // Component for displaying code with syntax highlighting-like styling
 function CodeViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
@@ -20,14 +21,43 @@ function CodeViewer({ content, onChange }: { content: string; onChange: (value: 
 
 // Component for displaying markdown-like content
 function MarkdownViewer({ content, onChange }: { content: string; onChange: (value: string) => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  
   return (
-    <div className="w-full h-full">
-      <textarea
-        className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
-        value={content}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-      />
+    <div className="w-full h-full flex flex-col">
+      <div className="flex justify-end p-2 bg-gray-50 border-b">
+        <button 
+          onClick={() => setIsEditing(!isEditing)}
+          className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded flex items-center"
+        >
+          {isEditing ? (
+            <>
+              <Eye size={14} className="mr-1" />
+              Preview
+            </>
+          ) : (
+            <>
+              <Edit2 size={14} className="mr-1" />
+              Edit
+            </>
+          )}
+        </button>
+      </div>
+      
+      <div className="flex-1 overflow-auto">
+        {isEditing ? (
+          <textarea
+            className="w-full h-full p-4 font-mono text-sm bg-slate-50 focus:outline-none resize-none"
+            value={content}
+            onChange={(e) => onChange(e.target.value)}
+            spellCheck={false}
+          />
+        ) : (
+          <div className="markdown-body p-4 overflow-auto">
+            <ReactMarkdown>{content}</ReactMarkdown>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -237,6 +267,7 @@ export default function Viewer() {
   
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
 
   // Load content when selectedFile changes
   useEffect(() => {
@@ -247,6 +278,23 @@ export default function Viewer() {
       }));
     }
   }, [selectedFile]);
+  
+  // Make the save button accessible to other components
+  useEffect(() => {
+    // Expose the save functionality via the DOM for parent components
+    const handleExternalSave = () => {
+      saveActiveFile();
+    };
+
+    // Create a global function that can be called by other components
+    const saveFn = window as any;
+    saveFn._editorSaveFile = handleExternalSave;
+
+    return () => {
+      // Clean up when component unmounts
+      delete saveFn._editorSaveFile;
+    };
+  }, [activeTabId, openTabs]);
 
   // Update file content in state
   const handleContentChange = useCallback((fileId: string, content: string) => {
@@ -257,52 +305,97 @@ export default function Viewer() {
   }, []);
 
   const handleSaveFile = async (fileId: string) => {
+    // Validate inputs
+    if (!fileId) {
+      console.error("Cannot save: No fileId provided");
+      return;
+    }
+    
     const content = fileContents[fileId];
-    if (content === undefined) return;
+    if (content === undefined) {
+      console.error("Cannot save: No content found for fileId", fileId);
+      return;
+    }
 
     setIsSaving(true);
+    console.log("Saving file:", fileId);
     
     try {
       // Get the current file
       const allFiles = await dbService.getAllFiles();
+      console.log("Retrieved files from DB:", allFiles.length);
+      
       const fileToUpdate = allFiles.find(f => f.id === fileId);
       
-      if (fileToUpdate) {
-        // Update the content
-        const updatedFile = {
-          ...fileToUpdate,
-          content
-        };
-        
-        // Save to IndexedDB
-        await dbService.updateFile(updatedFile);
-        console.log("File saved successfully:", updatedFile.name);
-        
-        // Optional: Show a small success indicator
-        const saveIndicator = document.createElement('div');
-        saveIndicator.className = 'fixed bottom-4 right-4 bg-green-100 text-green-800 px-4 py-2 rounded shadow-md';
-        saveIndicator.innerText = 'File saved successfully';
-        document.body.appendChild(saveIndicator);
-        
-        setTimeout(() => {
-          document.body.removeChild(saveIndicator);
-        }, 2000);
+      if (!fileToUpdate) {
+        throw new Error(`File with ID ${fileId} not found in database`);
       }
+      
+      console.log("Found file to update:", fileToUpdate.name);
+      
+      // Update the content
+      const updatedFile = {
+        ...fileToUpdate,
+        content
+      };
+      
+      // Save to IndexedDB
+      console.log("Updating file in DB:", updatedFile.name);
+      await dbService.updateFile(updatedFile);
+      console.log("File saved successfully:", updatedFile.name);
+      
+      // Show a success indicator with React state
+      setIsSaving(false);
+      
+      // Create temporary success notification
+      const container = document.createElement('div');
+      container.className = 'fixed bottom-4 right-4 z-50 bg-green-100 text-green-800 px-4 py-2 rounded shadow-lg';
+      container.innerHTML = `
+        <div class="flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+          </svg>
+          <span>File saved successfully</span>
+        </div>
+      `;
+      document.body.appendChild(container);
+      
+      setTimeout(() => {
+        if (document.body.contains(container)) {
+          document.body.removeChild(container);
+        }
+      }, 2000);
+      
     } catch (error) {
       console.error("Error saving file:", error);
-      alert("Failed to save file");
+      
+      // Log more details about the error
+      if (error instanceof Error) {
+        console.error("Error details:", error.message);
+        console.error("Error stack:", error.stack);
+      }
+      
+      // Show error notification
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Failed to save file: ${errorMessage}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Save the current active file - exposed via data attribute
+  // Save the current active file
   const saveActiveFile = () => {
-    if (!activeTabId) return;
+    if (!activeTabId) {
+      console.log("No active tab to save");
+      return;
+    }
     
     const activeTab = openTabs.find(tab => tab.id === activeTabId);
     if (activeTab) {
+      console.log("Saving file for tab:", activeTab.fileName);
       handleSaveFile(activeTab.fileId);
+    } else {
+      console.error("Active tab not found in openTabs:", activeTabId);
     }
   };
 
@@ -361,14 +454,14 @@ export default function Viewer() {
           onChange={(value) => handleContentChange(fileId, value)}
         />
       );
-    } else if (mimeType === 'text/markdown') {
+    } else if (mimeType === 'text/markdown' || fileId.toLowerCase().endsWith('.md')) {
       return (
         <MarkdownViewer 
           content={content}
           onChange={(value) => handleContentChange(fileId, value)}
         />
       );
-    } else if (mimeType === 'application/json') {
+    } else if (mimeType === 'application/json' || fileId.toLowerCase().endsWith('.json')) {
       return (
         <JsonViewer 
           content={content}
@@ -439,6 +532,7 @@ export default function Viewer() {
         className="hidden"
         data-editor-save
         onClick={saveActiveFile}
+        ref={saveButtonRef}
       />
       
       {/* Content */}

@@ -43,17 +43,6 @@ export default function ConversationSidebar() {
           </ul>
         )}
       </div>
-      <div className="p-3 border-t border-stone-100">
-        <Button
-          onClick={onNewConversation}
-          variant="outline"
-          size="sm"
-          className="flex w-full items-center justify-center gap-1"
-        >
-          <PlusCircle size={16} />
-          New Conversation
-        </Button>
-      </div>
     </div>
   );
 }

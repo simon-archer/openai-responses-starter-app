@@ -1,5 +1,5 @@
 "use client";
-import { Menu, X, ChevronDown, Upload, FolderPlus, Save } from "lucide-react";
+import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, Check, FileText, PlusCircle } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
@@ -9,6 +9,7 @@ import ResizablePanel from "@/components/resizable-panel";
 import FilesPanel from "@/components/files-panel";
 import Viewer from "@/components/editor";
 import { useFiles, TabItem } from "@/components/context/files-context";
+import { useConversations } from "@/components/context/conversations-context";
 
 // Panel content types
 type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Viewer";
@@ -24,14 +25,61 @@ function PanelSelector({
   allowedTypes?: PanelContentType[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Files context for file operations
   const filesContext = useFiles();
+  const conversationsContext = useConversations();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Get icon for panel type
+  const getPanelIcon = (type: PanelContentType) => {
+    switch (type) {
+      case "Conversations":
+        return <MessageCircle size={16} className="text-purple-500" />;
+      case "Chat":
+        return <MessageSquare size={16} className="text-blue-500" />;
+      case "Tools":
+        return <Wrench size={16} className="text-orange-500" />;
+      case "Files":
+        return <FolderOpen size={16} className="text-amber-500" />;
+      case "Viewer":
+        return <FileText size={16} className="text-green-500" />;
+      default:
+        return null;
+    }
+  };
 
   // Render panel-specific actions based on currentType
   const renderPanelActions = () => {
     switch (currentType) {
+      case "Conversations":
+        return (
+          <div className="flex items-center space-x-2">
+            <button 
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
+              onClick={() => {
+                // Use the context function to create a new conversation
+                conversationsContext.onNewConversation();
+              }}
+              title="New Conversation"
+            >
+              <PlusCircle size={16} />
+            </button>
+          </div>
+        );
       case "Files":
         return (
           <div className="flex items-center space-x-2">
@@ -82,17 +130,35 @@ function PanelSelector({
           <div className="flex items-center space-x-2">
             {filesContext.activeTabId && (
               <button
-                className="flex items-center px-2 py-1 bg-black text-white text-xs rounded hover:bg-gray-800"
+                className="p-1.5 rounded hover:bg-gray-100 text-gray-700 flex items-center"
                 onClick={() => {
-                  // Get the Viewer component to save the file
-                  const editorRef = document.querySelector('[data-editor-save]');
-                  if (editorRef) {
-                    (editorRef as HTMLButtonElement).click();
+                  console.log("Save button clicked");
+                  
+                  try {
+                    // Approach 1: Try to click the save button via data attribute
+                    const editorRef = document.querySelector('[data-editor-save]');
+                    if (editorRef) {
+                      console.log("Found save button via data attribute");
+                      (editorRef as HTMLButtonElement).click();
+                    } else {
+                      console.warn("Save button element not found");
+                      
+                      // Approach 2: Try to use the global function if available
+                      const win = window as any;
+                      if (win._editorSaveFile && typeof win._editorSaveFile === 'function') {
+                        console.log("Using global save function");
+                        win._editorSaveFile();
+                      } else {
+                        console.error("No method found to save the file");
+                      }
+                    }
+                  } catch (error) {
+                    console.error("Error saving file:", error);
                   }
                 }}
+                title="Save File"
               >
-                <Save size={14} className="mr-1" />
-                Save
+                <Save size={16} />
               </button>
             )}
           </div>
@@ -104,28 +170,42 @@ function PanelSelector({
 
   return (
     <div className="flex items-center justify-between w-full">
-      <div className="relative">
+      <div className="relative" ref={dropdownRef}>
         <button 
           onClick={() => setIsOpen(!isOpen)} 
-          className="flex items-center gap-1 text-lg font-medium px-3 py-1.5 rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-2 text-lg font-medium px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-150 shadow-sm"
+          aria-expanded={isOpen}
+          aria-haspopup="true"
         >
-          {currentType}
-          <ChevronDown size={16} className="ml-1 opacity-70" />
+          {getPanelIcon(currentType)}
+          <span>{currentType}</span>
+          <ChevronDown 
+            size={16} 
+            className={`ml-1 opacity-70 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+          />
         </button>
         
         {isOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white rounded-md z-10 min-w-40 border rounded-xl border-gray-200 shadow-lg ring-1 ring-black ring-opacity-5">
+          <div 
+            className="absolute top-full left-0 mt-1 bg-white rounded-lg z-10 w-auto min-w-[160px] border border-gray-200 shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden transition-all duration-150 p-2 flex flex-col gap-1"
+            role="menu"
+            aria-orientation="vertical"
+          >
             {allowedTypes.map((type) => (
               <button
                 key={type}
-                className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                  type === currentType ? "font-medium bg-gray-50" : ""
+                className={`flex items-center w-full text-left px-3 py-2 text-sm transition-colors duration-150 rounded-md ${
+                  type === currentType 
+                    ? "font-medium bg-blue-50 text-blue-700" 
+                    : "text-gray-700 hover:bg-gray-50"
                 }`}
                 onClick={() => {
                   onChange(type);
                   setIsOpen(false);
                 }}
+                role="menuitem"
               >
+                <span className="mr-2.5">{getPanelIcon(type)}</span>
                 {type}
               </button>
             ))}

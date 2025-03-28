@@ -139,8 +139,11 @@ class IndexedDBService implements IDBService {
   updateFile(file: FileItem): Promise<FileItem> {
     return new Promise(async (resolve, reject) => {
       try {
+        console.log("IndexedDB updateFile called with:", file.id, file.name);
+        
         // Return the file if not in browser (mock successful update)
         if (!isBrowser) {
+          console.log("Not in browser, returning file without saving");
           resolve(file);
           return;
         }
@@ -148,21 +151,52 @@ class IndexedDBService implements IDBService {
         await this.initDB();
         
         if (!this.db) {
+          console.error("Database not initialized");
           reject('Database not initialized');
           return;
         }
 
+        console.log("Creating transaction for update");
         const transaction = this.db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(file);
-
-        request.onsuccess = () => {
-          resolve(file);
+        
+        transaction.oncomplete = () => {
+          console.log("Transaction completed successfully");
         };
+        
+        transaction.onerror = (event) => {
+          console.error("Transaction error:", event);
+        };
+        
+        const store = transaction.objectStore(STORE_NAME);
+        console.log("Created object store for update");
+        
+        // First check if the file exists
+        const getRequest = store.get(file.id);
+        
+        getRequest.onsuccess = () => {
+          if (!getRequest.result) {
+            console.error(`File with id ${file.id} does not exist in the database`);
+            reject(`File with id ${file.id} does not exist in the database`);
+            return;
+          }
+          
+          console.log("File exists, proceeding with update");
+          const request = store.put(file);
 
-        request.onerror = (event) => {
-          console.error('Error updating file:', event);
-          reject('Failed to update file');
+          request.onsuccess = () => {
+            console.log("Update successful for file:", file.name);
+            resolve(file);
+          };
+
+          request.onerror = (event) => {
+            console.error('Error updating file in IndexedDB:', event);
+            reject('Failed to update file in database');
+          };
+        };
+        
+        getRequest.onerror = (event) => {
+          console.error('Error checking file existence:', event);
+          reject('Failed to check if file exists');
         };
       } catch (error) {
         console.error('Error in updateFile:', error);
