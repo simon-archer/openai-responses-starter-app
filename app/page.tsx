@@ -7,17 +7,17 @@ import ToolsPanel from "@/components/tools-panel";
 import ConversationSidebar from "@/components/conversation-sidebar";
 import ResizablePanel from "@/components/resizable-panel";
 import FilesPanel from "@/components/files-panel";
-import Editor from "@/components/editor";
+import Viewer from "@/components/editor";
 import { useFiles, TabItem } from "@/components/context/files-context";
 
 // Panel content types
-type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Editor";
+type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Viewer";
 
 // Panel selector component
 function PanelSelector({ 
   currentType, 
   onChange,
-  allowedTypes = ["Conversations", "Chat", "Tools", "Files", "Editor"]
+  allowedTypes = ["Conversations", "Chat", "Tools", "Files", "Viewer"]
 }: { 
   currentType: PanelContentType; 
   onChange: (type: PanelContentType) => void;
@@ -60,7 +60,7 @@ function PanelSelector({
                   }
                 }}
                 multiple
-                accept=".txt,.js,.jsx,.ts,.tsx,.css,.html,.json,.md,.pdf"
+                accept=".txt,.js,.jsx,.ts,.tsx,.css,.html,.json,.md,.pdf,.doc,.docx"
               />
             </button>
             <button 
@@ -77,14 +77,14 @@ function PanelSelector({
             </button>
           </div>
         );
-      case "Editor":
+      case "Viewer":
         return (
           <div className="flex items-center space-x-2">
             {filesContext.activeTabId && (
               <button
                 className="flex items-center px-2 py-1 bg-black text-white text-xs rounded hover:bg-gray-800"
                 onClick={() => {
-                  // Get the Editor component to save the file
+                  // Get the Viewer component to save the file
                   const editorRef = document.querySelector('[data-editor-save]');
                   if (editorRef) {
                     (editorRef as HTMLButtonElement).click();
@@ -107,19 +107,19 @@ function PanelSelector({
       <div className="relative">
         <button 
           onClick={() => setIsOpen(!isOpen)} 
-          className="flex items-center gap-1 text-lg font-medium hover:opacity-80"
+          className="flex items-center gap-1 text-lg font-medium px-3 py-1.5 rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors"
         >
           {currentType}
-          <ChevronDown size={16} />
+          <ChevronDown size={16} className="ml-1 opacity-70" />
         </button>
         
         {isOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white shadow-md rounded-md z-10 min-w-32">
+          <div className="absolute top-full left-0 mt-1 bg-white rounded-md z-10 min-w-40 border rounded-xl border-gray-200 shadow-lg ring-1 ring-black ring-opacity-5">
             {allowedTypes.map((type) => (
               <button
                 key={type}
-                className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
-                  type === currentType ? "font-medium" : ""
+                className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                  type === currentType ? "font-medium bg-gray-50" : ""
                 }`}
                 onClick={() => {
                   onChange(type);
@@ -148,7 +148,7 @@ export default function Main() {
   // Panel content type state
   const [leftPanelType, setLeftPanelType] = useState<PanelContentType>("Conversations");
   const [centerPanelType, setCenterPanelType] = useState<PanelContentType>("Chat");
-  const [rightPanelType, setRightPanelType] = useState<PanelContentType>("Editor");
+  const [rightPanelType, setRightPanelType] = useState<PanelContentType>("Viewer");
 
   // Panel content renderer
   const renderPanelContent = (type: PanelContentType) => {
@@ -161,8 +161,8 @@ export default function Main() {
         return <ToolsPanel />;
       case "Files":
         return <FilesPanel />;
-      case "Editor":
-        return <Editor />;
+      case "Viewer":
+        return <Viewer />;
     }
   };
 

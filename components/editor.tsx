@@ -155,27 +155,6 @@ function PdfViewer({ content }: { content: string }) {
     };
   }, [pdfObjectURL]);
 
-  // Handle download click
-  const handleDownload = () => {
-    if (!content) return;
-    
-    try {
-      // If we have an object URL, use that for download
-      const downloadUrl = pdfObjectURL || content;
-      
-      // Create a temporary link element
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = 'document.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      console.error("Error downloading PDF:", e);
-      alert("Failed to download PDF");
-    }
-  };
-
   // Show error state if we have an error or no content
   if (error || !pdfObjectURL) {
     return (
@@ -189,13 +168,6 @@ function PdfViewer({ content }: { content: string }) {
             <p className="whitespace-pre-wrap break-all">{debugInfo}</p>
           </div>
         )}
-        
-        <button 
-          onClick={handleDownload}
-          className="mt-4 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
-        >
-          Download PDF anyway
-        </button>
       </div>
     );
   }
@@ -203,49 +175,58 @@ function PdfViewer({ content }: { content: string }) {
   // Only render iframe when we have valid content
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="bg-gray-100 p-2 flex justify-between items-center">
-        <span className="text-sm font-medium">PDF Document</span>
-        <button 
-          onClick={handleDownload}
-          className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
-        >
-          Download PDF
-        </button>
-      </div>
-      <div className="flex-1 p-4 overflow-hidden">
-        <object
-          data={pdfObjectURL}
-          type="application/pdf"
-          className="w-full h-full"
-        >
-          <iframe 
-            src={pdfObjectURL} 
-            className="w-full h-full border-0"
-            title="PDF Viewer"
-          />
-        </object>
-      </div>
+      <object
+        data={pdfObjectURL}
+        type="application/pdf"
+        className="w-full h-full"
+      >
+        <iframe 
+          src={pdfObjectURL} 
+          className="w-full h-full border-0"
+          title="PDF Viewer"
+        />
+      </object>
     </div>
   );
 }
 
-function getFileIcon(file: { mimeType?: string; name: string }) {
-  const { mimeType, name } = file;
+// Get file icon based on file type/extension
+function getFileIcon(fileName: string, mimeType?: string) {
+  // Check for PDF files
+  if (mimeType === "application/pdf" || fileName.toLowerCase().endsWith('.pdf')) {
+    return <FileText size={16} className="mr-2 text-red-500" />;
+  }
   
-  if (mimeType === "application/javascript" || mimeType === "text/css" || 
-      name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".ts") || 
-      name.endsWith(".tsx") || name.endsWith(".css")) {
+  // Check for Word files
+  if (mimeType === "application/msword" || 
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx')) {
+    return <FileText size={16} className="mr-2 text-blue-700" />;
+  }
+  
+  // Check for code files
+  if (mimeType === "application/javascript" || mimeType === "application/typescript" || 
+      mimeType?.includes("jsx") || mimeType?.includes("tsx") ||
+      fileName.endsWith(".js") || fileName.endsWith(".jsx") || fileName.endsWith(".ts") || 
+      fileName.endsWith(".tsx") || fileName.endsWith(".css") || fileName.endsWith(".html")) {
     return <FileCode size={16} className="mr-2 text-blue-500" />;
   }
 
-  if (mimeType === "application/json" || name.endsWith(".json")) {
+  // Check for JSON files
+  if (mimeType === "application/json" || fileName.endsWith(".json")) {
     return <FileJson size={16} className="mr-2 text-green-500" />;
   }
 
+  // Check for markdown files
+  if (mimeType === "text/markdown" || fileName.endsWith(".md")) {
+    return <FileText size={16} className="mr-2 text-purple-500" />;
+  }
+
+  // Default file icon
   return <FileText size={16} className="mr-2 text-gray-500" />;
 }
 
-export default function Editor() {
+export default function Viewer() {
   const { 
     selectedFile, 
     openTabs, 
@@ -337,6 +318,38 @@ export default function Editor() {
     if (isPdfFile(mimeType)) {
       // For PDFs, we don't need to handle changes as they're not editable
       return <PdfViewer content={content} />;
+    } else if (
+      mimeType === "application/msword" || 
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      fileId.toLowerCase().endsWith('.doc') || 
+      fileId.toLowerCase().endsWith('.docx')
+    ) {
+      // Word documents aren't directly viewable in the browser
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
+          <FileText size={48} className="mb-4 text-blue-700" />
+          <p className="font-medium mb-2">Word Document</p>
+          <p className="text-sm">Word documents can be downloaded but not previewed</p>
+          <button 
+            className="mt-4 px-4 py-2 bg-blue-50 text-blue-500 rounded border border-blue-200 hover:bg-blue-100"
+            onClick={() => {
+              // Let user download the file
+              if (content && (content.startsWith('data:') || content.includes('base64'))) {
+                const a = document.createElement('a');
+                a.href = content;
+                a.download = openTabs.find(tab => tab.fileId === fileId)?.fileName || 'document.docx';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              } else {
+                alert('No file data available for download');
+              }
+            }}
+          >
+            Download Document
+          </button>
+        </div>
+      );
     } else if (mimeType.startsWith('application/javascript') || 
         mimeType.startsWith('application/typescript') || 
         mimeType.includes('html') || 
@@ -401,15 +414,18 @@ export default function Editor() {
                 ${isActive ? 'bg-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}
               `}
               onClick={() => setActiveTab(tab.id)}
+              title={tab.fileName}
             >
-              <Code size={14} className="mr-2" />
-              <span className="text-sm font-medium mr-1">{tab.fileName}</span>
+              {getFileIcon(tab.fileName, tab.mimeType)}
+              <span className="text-sm font-medium mr-1 truncate max-w-[100px]">{tab.fileName}</span>
               <button 
                 className="ml-1 p-1 rounded-full hover:bg-gray-200"
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   closeTab(tab.id);
                 }}
+                aria-label="Close tab"
               >
                 <X size={12} />
               </button>

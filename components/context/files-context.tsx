@@ -38,6 +38,7 @@ interface FilesContextType {
   setActiveTab: (tabId: string) => void;
   uploadFile: (file: File) => Promise<void>;
   createFolder: (name: string) => Promise<void>;
+  deleteFile: (fileId: string) => Promise<void>;
 }
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
@@ -331,115 +332,127 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
       
       if (isPdf) {
         // Read as data URL for PDF files
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          
-          reader.onload = async (e) => {
-            try {
-              const content = e.target?.result as string;
-              
-              if (!content) {
-                console.error("Failed to read PDF content");
-                return reject("Failed to read PDF content");
-              }
-              
-              console.log("PDF upload - content type:", typeof content);
-              console.log("PDF upload - content starts with:", content.substring(0, 30));
-              
-              // Ensure file has an ID even if saving fails
-              const fileId = generateUniqueId();
-              
-              const newFile: FileItem = {
-                id: fileId,
-                name: file.name,
-                type: "file",
-                mimeType: 'application/pdf',
-                content,
-                parentId: null
-              };
-              
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = async (e) => {
               try {
-                await dbService.saveFile(newFile);
-                console.log("PDF file saved successfully:", file.name);
+                const content = e.target?.result as string;
                 
-                // Refresh the file list
-                const dbFiles = await dbService.getAllFiles();
-                setFiles(buildFileTree(dbFiles));
+                if (!content) {
+                  console.error("Failed to read PDF content");
+                  reject(new Error("Failed to read PDF content"));
+                  return;
+                }
                 
-                // Open the PDF file in a tab
-                openFileInTab(fileId);
-                resolve();
-              } catch (dbError) {
-                console.error("Error saving PDF to IndexedDB:", dbError);
-                reject(dbError);
+                console.log("PDF upload - content type:", typeof content);
+                console.log("PDF upload - content starts with:", content.substring(0, 30));
+                
+                // Ensure file has an ID even if saving fails
+                const fileId = generateUniqueId();
+                
+                const newFile: FileItem = {
+                  id: fileId,
+                  name: file.name,
+                  type: "file",
+                  mimeType: 'application/pdf',
+                  content,
+                  parentId: null
+                };
+                
+                try {
+                  await dbService.saveFile(newFile);
+                  console.log("PDF file saved successfully:", file.name);
+                  
+                  // Refresh the file list
+                  const dbFiles = await dbService.getAllFiles();
+                  setFiles(buildFileTree(dbFiles));
+                  
+                  // Open the PDF file in a tab
+                  openFileInTab(fileId);
+                  resolve();
+                } catch (dbError) {
+                  console.error("Error saving PDF to IndexedDB:", dbError);
+                  reject(new Error(`Error saving PDF: ${dbError}`));
+                }
+              } catch (error) {
+                console.error("Error processing PDF:", error);
+                reject(new Error(`Error processing PDF: ${error}`));
               }
-            } catch (error) {
-              console.error("Error processing PDF:", error);
-              reject(error);
-            }
-          };
-          
-          reader.onerror = (error) => {
-            console.error("Error reading PDF file:", error);
-            reject(error);
-          };
-          
-          // Read as data URL - which produces a base64 encoded string
-          reader.readAsDataURL(file);
-        });
+            };
+            
+            reader.onerror = (event) => {
+              console.error("Error reading PDF file:", event);
+              reject(new Error("Failed to read PDF file"));
+            };
+            
+            // Read as data URL - which produces a base64 encoded string
+            reader.readAsDataURL(file);
+          });
+        } catch (error) {
+          console.error("Error in PDF upload process:", error);
+          throw error;
+        }
       } else {
         // For text files
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          
-          reader.onload = async (e) => {
-            try {
-              const content = e.target?.result as string;
-              
-              // Ensure file has an ID even if saving fails
-              const fileId = generateUniqueId();
-              
-              const newFile: FileItem = {
-                id: fileId,
-                name: file.name,
-                type: "file",
-                mimeType: file.type || getMimeTypeFromExtension(file.name),
-                content,
-                parentId: null
-              };
-              
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = async (e) => {
               try {
-                await dbService.saveFile(newFile);
-                console.log("Text file saved successfully:", file.name);
+                const content = e.target?.result as string;
                 
-                // Refresh the file list
-                const dbFiles = await dbService.getAllFiles();
-                setFiles(buildFileTree(dbFiles));
+                // Ensure file has an ID even if saving fails
+                const fileId = generateUniqueId();
                 
-                // Open the text file in a tab
-                openFileInTab(fileId);
-                resolve();
-              } catch (dbError) {
-                console.error("Error saving text file to IndexedDB:", dbError);
-                reject(dbError);
+                const newFile: FileItem = {
+                  id: fileId,
+                  name: file.name,
+                  type: "file",
+                  mimeType: file.type || getMimeTypeFromExtension(file.name),
+                  content,
+                  parentId: null
+                };
+                
+                try {
+                  await dbService.saveFile(newFile);
+                  console.log("Text file saved successfully:", file.name);
+                  
+                  // Refresh the file list
+                  const dbFiles = await dbService.getAllFiles();
+                  setFiles(buildFileTree(dbFiles));
+                  
+                  // Open the text file in a tab
+                  openFileInTab(fileId);
+                  resolve();
+                } catch (dbError) {
+                  console.error("Error saving text file to IndexedDB:", dbError);
+                  reject(new Error(`Error saving text file: ${dbError}`));
+                }
+              } catch (error) {
+                console.error("Error processing text file:", error);
+                reject(new Error(`Error processing text file: ${error}`));
               }
-            } catch (error) {
-              console.error("Error processing text file:", error);
-              reject(error);
-            }
-          };
-          
-          reader.onerror = (error) => {
-            console.error("Error reading text file:", error);
-            reject(error);
-          };
-          
-          reader.readAsText(file);
-        });
+            };
+            
+            reader.onerror = (event) => {
+              console.error("Error reading text file:", event);
+              reject(new Error("Failed to read text file"));
+            };
+            
+            reader.readAsText(file);
+          });
+        } catch (error) {
+          console.error("Error in text file upload process:", error);
+          throw error;
+        }
       }
     } catch (error) {
       console.error("Error in uploadFile function:", error);
-      throw error;
+      // Don't rethrow to prevent unhandled rejection
+      return Promise.resolve(); // Silently fail but log the error
     }
   };
 
@@ -527,6 +540,85 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   };
 
+  // Function to delete a file or folder
+  const deleteFile = async (fileId: string): Promise<void> => {
+    if (!isBrowser) return Promise.resolve();
+    
+    try {
+      // Find the file/folder
+      const fileToDelete = findFileById(fileId, files);
+      if (!fileToDelete) {
+        console.error("File not found:", fileId);
+        return Promise.resolve();
+      }
+      
+      try {
+        // Delete from IndexedDB
+        await dbService.deleteFile(fileId);
+        
+        // If it's an open tab, close it
+        const tabWithFile = openTabs.find(tab => tab.fileId === fileId);
+        if (tabWithFile) {
+          closeTab(tabWithFile.id);
+        }
+        
+        // If it's the selected file, clear selection
+        if (selectedFileId === fileId) {
+          setSelectedFileId(null);
+          setSelectedFile(null);
+        }
+        
+        // Remove from state
+        if (fileToDelete.parentId) {
+          // It's a child item
+          setFiles(prevFiles => {
+            return updateFileTree(prevFiles, fileToDelete.parentId!, (parent) => {
+              if (!parent.children) return parent;
+              return {
+                ...parent,
+                children: parent.children.filter(child => child.id !== fileId)
+              };
+            });
+          });
+        } else {
+          // It's a root item
+          setFiles(prevFiles => prevFiles.filter(file => file.id !== fileId));
+        }
+        
+        console.log("File deleted successfully:", fileToDelete.name);
+      } catch (dbError) {
+        console.error("Error with IndexedDB deletion:", dbError);
+        throw new Error(`Failed to delete file from database: ${dbError}`);
+      }
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      // Don't rethrow to prevent unhandled promise rejection
+      return Promise.resolve();
+    }
+  };
+
+  // Helper function to update an item in the file tree
+  const updateFileTree = (
+    files: FileItem[], 
+    fileIdToUpdate: string, 
+    updateFn: (file: FileItem) => FileItem
+  ): FileItem[] => {
+    return files.map(file => {
+      if (file.id === fileIdToUpdate) {
+        return updateFn(file);
+      }
+      
+      if (file.type === 'folder' && file.children) {
+        return {
+          ...file,
+          children: updateFileTree(file.children, fileIdToUpdate, updateFn)
+        };
+      }
+      
+      return file;
+    });
+  };
+
   return (
     <FilesContext.Provider
       value={{
@@ -543,7 +635,8 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
         closeTab,
         setActiveTab,
         uploadFile,
-        createFolder
+        createFolder,
+        deleteFile
       }}
     >
       {children}
