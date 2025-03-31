@@ -7,9 +7,11 @@ import { CircleX } from "lucide-react";
 import { TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Tooltip } from "./ui/tooltip";
 import { TooltipProvider } from "./ui/tooltip";
+import { useFiles } from "@/components/context/files-context";
 
 export default function FileSearchSetup() {
   const { vectorStore, setVectorStore } = useToolsStore();
+  const { setVectorStore: setFilesVectorStore } = useFiles();
   const [newStoreId, setNewStoreId] = useState<string>("");
 
   const unlinkStore = async () => {
@@ -17,17 +19,25 @@ export default function FileSearchSetup() {
       id: "",
       name: "",
     });
+    await setFilesVectorStore(null);
   };
 
   const handleAddStore = async (storeId: string) => {
     if (storeId.trim()) {
+      console.log("[FileSearchSetup] Adding vector store:", storeId);
       const newStore = await fetch(
         `/api/vector_stores/retrieve_store?vector_store_id=${storeId}`
       ).then((res) => res.json());
+      console.log("[FileSearchSetup] Retrieved store response:", newStore);
+      
       if (newStore.id) {
-        console.log("Retrieved store:", newStore);
+        console.log("[FileSearchSetup] Setting vector store in tools store:", newStore);
         setVectorStore(newStore);
+        console.log("[FileSearchSetup] Setting vector store in files context:", newStore.id);
+        await setFilesVectorStore(newStore.id);
+        console.log("[FileSearchSetup] Vector store setup complete");
       } else {
+        console.log("[FileSearchSetup] Vector store not found");
         alert("Vector store not found");
       }
     }

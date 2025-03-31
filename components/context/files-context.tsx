@@ -5,6 +5,16 @@ import { dbService } from "@/lib/indexeddb-service";
 // Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined';
 
+// Helper function to convert ArrayBuffer to base64
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
 // Sample data structure for files
 export type FileItem = {
   id: string;
@@ -14,6 +24,7 @@ export type FileItem = {
   mimeType?: string; // To help determine how to display the file
   content?: string; // Sample content for demo purposes
   parentId?: string | null; // To track parent folder for flat storage
+  isVectorStoreFile?: boolean; // Optional vector store file marker
 };
 
 export type TabItem = {
@@ -41,6 +52,8 @@ interface FilesContextType {
   deleteFile: (fileId: string) => Promise<void>;
   refreshFile: (file: FileItem) => void;
   findFileById: (fileId: string, fileList: FileItem[]) => FileItem | null;
+  setVectorStore: (vectorStoreId: string | null) => Promise<void>;
+  currentVectorStoreId: string | null;
 }
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
@@ -92,147 +105,104 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
   const [openTabs, setOpenTabs] = useState<TabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
-  const loadExampleFiles = useCallback(async () => {
-    // Sample files for demonstration
-    const sampleFiles: FileItem[] = [
-      {
-        id: "1",
-        name: "Project Files",
-        type: "folder",
-        parentId: null,
-      },
-      { 
-        id: "1-1", 
-        name: "index.js", 
-        type: "file", 
-        mimeType: "application/javascript",
-        content: "// JavaScript code\nconst app = {};\nconsole.log('Hello world');\n\nfunction example() {\n  return 'This is a code sample';\n}",
-        parentId: "1",
-      },
-      { 
-        id: "1-2", 
-        name: "styles.css", 
-        type: "file",
-        mimeType: "text/css",
-        content: "/* CSS styles */\nbody {\n  font-family: sans-serif;\n  margin: 0;\n  padding: 20px;\n  color: #333;\n}\n\n.container {\n  max-width: 1200px;\n  margin: 0 auto;\n}",
-        parentId: "1",
-      },
-      { 
-        id: "1-3", 
-        name: "components", 
-        type: "folder",
-        parentId: "1",
-      },
-      { 
-        id: "1-3-1", 
-        name: "Header.jsx", 
-        type: "file",
-        mimeType: "text/jsx",
-        content: "import React from 'react';\n\nexport default function Header() {\n  return (\n    <header className=\"header\">\n      <h1>Project Title</h1>\n      <nav>\n        <ul>\n          <li><a href=\"#\">Home</a></li>\n          <li><a href=\"#\">About</a></li>\n          <li><a href=\"#\">Contact</a></li>\n        </ul>\n      </nav>\n    </header>\n  );\n}",
-        parentId: "1-3",
-      },
-      { 
-        id: "1-3-2", 
-        name: "Footer.jsx", 
-        type: "file",
-        mimeType: "text/jsx",
-        content: "import React from 'react';\n\nexport default function Footer() {\n  return (\n    <footer className=\"footer\">\n      <p>&copy; {new Date().getFullYear()} Project Name</p>\n    </footer>\n  );\n}",
-        parentId: "1-3",
-      },
-      {
-        id: "2",
-        name: "Documentation",
-        type: "folder",
-        parentId: null,
-      },
-      { 
-        id: "2-1", 
-        name: "README.md", 
-        type: "file",
-        mimeType: "text/markdown",
-        content: "# Project Documentation\n\n## Overview\nThis is a sample project demonstrating various features.\n\n## Getting Started\n1. Clone the repository\n2. Install dependencies\n3. Run the development server\n\n## Features\n- Feature 1\n- Feature 2\n- Feature 3",
-        parentId: "2",
-      },
-      { 
-        id: "2-2", 
-        name: "API.md", 
-        type: "file",
-        mimeType: "text/markdown",
-        content: "# API Documentation\n\n## Endpoints\n\n### GET /api/users\nReturns a list of users\n\n### POST /api/users\nCreates a new user\n\n### GET /api/users/:id\nReturns a specific user\n\n### PUT /api/users/:id\nUpdates a specific user\n\n### DELETE /api/users/:id\nDeletes a specific user",
-        parentId: "2",
-      },
-      { 
-        id: "3", 
-        name: "package.json", 
-        type: "file",
-        mimeType: "application/json",
-        content: "{\n  \"name\": \"project-name\",\n  \"version\": \"1.0.0\",\n  \"description\": \"A sample project\",\n  \"main\": \"index.js\",\n  \"scripts\": {\n    \"dev\": \"next dev\",\n    \"build\": \"next build\",\n    \"start\": \"next start\"\n  },\n  \"dependencies\": {\n    \"react\": \"^18.0.0\",\n    \"react-dom\": \"^18.0.0\",\n    \"next\": \"^13.0.0\"\n  }\n}",
-        parentId: null,
-      },
-      { 
-        id: "4", 
-        name: "sample.txt", 
-        type: "file",
-        mimeType: "text/plain",
-        content: "This is a plain text file.\n\nIt contains multiple lines of text with no special formatting.\n\nPlain text files are simple and can be opened by almost any text editor.",
-        parentId: null,
-      },
-    ];
+  // Add state for vector store integration
+  const [vectorStoreFiles, setVectorStoreFiles] = useState<FileItem[]>([]);
+  const [currentVectorStoreId, setCurrentVectorStoreId] = useState<string | null>(null);
 
+  // Function to fetch vector store files
+  const fetchVectorStoreFiles = useCallback(async (vectorStoreId: string) => {
     try {
-      // Save sample files to IndexedDB
-      for (const file of sampleFiles) {
-        await dbService.saveFile(file);
+      console.log("[FilesContext] Fetching vector store files for:", vectorStoreId);
+      const response = await fetch(`/api/vector_stores/list_files?vector_store_id=${vectorStoreId}`);
+      console.log("[FilesContext] Response status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[FilesContext] Failed to fetch vector store files:", errorData);
+        throw new Error('Failed to fetch vector store files');
       }
       
-      // Then load them back (as tree)
-      const fileTree = buildFileTree(sampleFiles);
-      setFiles(fileTree);
+      const data = await response.json();
+      console.log("[FilesContext] Vector store files received:", data);
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        // Create a "Vector Store Files" folder
+        const vectorStoreFolder: FileItem = {
+          id: "vector-store-folder",
+          name: "Vector Store Files",
+          type: "folder",
+          parentId: null,
+          children: data.map((file: any) => ({
+            id: file.id,
+            name: file.name,
+            type: "file",
+            mimeType: file.mimeType,
+            parentId: "vector-store-folder",
+            isVectorStoreFile: true // Mark as vector store file
+          }))
+        };
+
+        console.log("[FilesContext] Created vector store folder:", vectorStoreFolder);
+        setVectorStoreFiles([vectorStoreFolder]);
+      } else {
+        console.log("[FilesContext] No files found in vector store");
+        setVectorStoreFiles([]);
+      }
+      setCurrentVectorStoreId(vectorStoreId);
     } catch (error) {
-      console.error("Error saving sample files:", error);
-      // Just use in-memory if saving fails
-      const fileTree = buildFileTree(sampleFiles);
-      setFiles(fileTree);
+      console.error('[FilesContext] Error fetching vector store files:', error);
+      setVectorStoreFiles([]);
     }
   }, []);
 
+  // Update loadFiles to include vector store files
   const loadFiles = useCallback(async () => {
     try {
       const dbFiles = await dbService.getAllFiles();
       if (dbFiles && dbFiles.length > 0) {
         const fileTree = buildFileTree(dbFiles);
-        setFiles(fileTree);
+        // Combine local files with vector store files if they exist
+        setFiles([...fileTree, ...(vectorStoreFiles || [])]);
       } else {
-        // If no files in DB, load sample files
-        loadExampleFiles();
+        // If no local files, still show vector store files if they exist
+        setFiles(vectorStoreFiles || []);
       }
     } catch (error) {
       console.error("Error loading files:", error);
-      loadExampleFiles();
+      // If local files fail to load, still show vector store files
+      setFiles(vectorStoreFiles || []);
     }
-  }, [loadExampleFiles]);
+  }, [vectorStoreFiles]);
 
-  // Initialize IndexedDB and load files
+  // Initialize files and vector store files
   useEffect(() => {
-    // Only initialize IndexedDB in the browser
-    if (!isBrowser) return;
-    
-    const initializeDB = async () => {
+    const init = async () => {
       setIsLoading(true);
       try {
         await dbService.initDB();
         await loadFiles();
       } catch (error) {
-        console.error("Error initializing database:", error);
-        // Add some example files if DB fails
-        loadExampleFiles();
+        console.error("Error initializing:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    initializeDB();
-  }, [loadFiles, loadExampleFiles]);
+    init();
+  }, [loadFiles]);
+
+  // Add function to set current vector store
+  const setVectorStore = async (vectorStoreId: string | null) => {
+    console.log("[FilesContext] Setting vector store:", vectorStoreId);
+    if (vectorStoreId) {
+      await fetchVectorStoreFiles(vectorStoreId);
+    } else {
+      console.log("[FilesContext] Clearing vector store files");
+      setVectorStoreFiles([]);
+      setCurrentVectorStoreId(null);
+    }
+    await loadFiles();
+  };
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -324,137 +294,77 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
     setSelectedFile(file);
   };
 
-  // Upload a file to IndexedDB
+  // Update uploadFile to handle vector store files
   const uploadFile = async (file: File): Promise<void> => {
     if (!isBrowser) return;
     
     try {
-      // Check if file is a PDF
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      setIsLoading(true);
+      const arrayBuffer = await file.arrayBuffer();
+      const base64Content = arrayBufferToBase64(arrayBuffer);
       
-      if (isPdf) {
-        // Read as data URL for PDF files
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = async (e) => {
-              try {
-                const content = e.target?.result as string;
-                
-                if (!content) {
-                  console.error("Failed to read PDF content");
-                  reject(new Error("Failed to read PDF content"));
-                  return;
-                }
-                
-                console.log("PDF upload - content type:", typeof content);
-                console.log("PDF upload - content starts with:", content.substring(0, 30));
-                
-                // Ensure file has an ID even if saving fails
-                const fileId = generateUniqueId();
-                
-                const newFile: FileItem = {
-                  id: fileId,
-                  name: file.name,
-                  type: "file",
-                  mimeType: 'application/pdf',
-                  content,
-                  parentId: null
-                };
-                
-                try {
-                  await dbService.saveFile(newFile);
-                  console.log("PDF file saved successfully:", file.name);
-                  
-                  // Refresh the file list
-                  const dbFiles = await dbService.getAllFiles();
-                  setFiles(buildFileTree(dbFiles));
-                  
-                  // Open the PDF file in a tab
-                  openFileInTab(fileId);
-                  resolve();
-                } catch (dbError) {
-                  console.error("Error saving PDF to IndexedDB:", dbError);
-                  reject(new Error(`Error saving PDF: ${dbError}`));
-                }
-              } catch (error) {
-                console.error("Error processing PDF:", error);
-                reject(new Error(`Error processing PDF: ${error}`));
-              }
-            };
-            
-            reader.onerror = (event) => {
-              console.error("Error reading PDF file:", event);
-              reject(new Error("Failed to read PDF file"));
-            };
-            
-            // Read as data URL - which produces a base64 encoded string
-            reader.readAsDataURL(file);
-          });
-        } catch (error) {
-          console.error("Error in PDF upload process:", error);
-          throw error;
+      // Upload to vector store if one is connected
+      if (currentVectorStoreId) {
+        // Step 1: Upload file to OpenAI
+        const uploadResponse = await fetch("/api/files/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileObject: {
+              name: file.name,
+              content: base64Content
+            }
+          })
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload file to OpenAI');
         }
+
+        const uploadData = await uploadResponse.json();
+        const fileId = uploadData.id;
+
+        // Step 2: Associate with vector store
+        const associateResponse = await fetch("/api/vector_stores/associate_file", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileId,
+            vectorStoreId: currentVectorStoreId
+          })
+        });
+
+        if (!associateResponse.ok) {
+          throw new Error('Failed to associate file with vector store');
+        }
+
+        // Refresh vector store files
+        await fetchVectorStoreFiles(currentVectorStoreId);
       } else {
-        // For text files
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = async (e) => {
-              try {
-                const content = e.target?.result as string;
-                
-                // Ensure file has an ID even if saving fails
-                const fileId = generateUniqueId();
-                
-                const newFile: FileItem = {
-                  id: fileId,
-                  name: file.name,
-                  type: "file",
-                  mimeType: file.type || getMimeTypeFromExtension(file.name),
-                  content,
-                  parentId: null
-                };
-                
-                try {
-                  await dbService.saveFile(newFile);
-                  console.log("Text file saved successfully:", file.name);
-                  
-                  // Refresh the file list
-                  const dbFiles = await dbService.getAllFiles();
-                  setFiles(buildFileTree(dbFiles));
-                  
-                  // Open the text file in a tab
-                  openFileInTab(fileId);
-                  resolve();
-                } catch (dbError) {
-                  console.error("Error saving text file to IndexedDB:", dbError);
-                  reject(new Error(`Error saving text file: ${dbError}`));
-                }
-              } catch (error) {
-                console.error("Error processing text file:", error);
-                reject(new Error(`Error processing text file: ${error}`));
-              }
-            };
-            
-            reader.onerror = (event) => {
-              console.error("Error reading text file:", event);
-              reject(new Error("Failed to read text file"));
-            };
-            
-            reader.readAsText(file);
-          });
-        } catch (error) {
-          console.error("Error in text file upload process:", error);
-          throw error;
-        }
+        // Handle regular file upload to IndexedDB
+        const newFile: FileItem = {
+          id: generateUniqueId(),
+          name: file.name,
+          type: "file",
+          mimeType: file.type || getMimeTypeFromExtension(file.name),
+          content: base64Content,
+          parentId: null
+        };
+        
+        await dbService.saveFile(newFile);
       }
+
+      // Reload all files
+      await loadFiles();
+      
+      // Open the file in a tab
+      // Note: For vector store files, we might need to handle this differently
+      // since we might not have immediate access to the content
     } catch (error) {
-      console.error("Error in uploadFile function:", error);
-      // Don't rethrow to prevent unhandled rejection
-      return Promise.resolve(); // Silently fail but log the error
+      console.error("Error uploading file:", error);
+      alert("Failed to upload file. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -668,7 +578,9 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
         createFolder,
         deleteFile,
         refreshFile,
-        findFileById
+        findFileById,
+        setVectorStore,
+        currentVectorStoreId
       }}
     >
       {children}

@@ -97,37 +97,46 @@ export default function FileUpload({
     }
     setUploading(true);
 
+    let fileId = "";
+    let finalVectorStoreId = vectorStoreId; // Start with the potentially existing store ID
+
     try {
+      // --- Step 1: Upload the file ---
+      console.log("Step 1: Uploading file...");
       const arrayBuffer = await file.arrayBuffer();
       const base64Content = arrayBufferToBase64(arrayBuffer);
       const fileObject = {
         name: file.name,
-        content: base64Content,
+        content: base64Content, // Sending base64 content
       };
 
-      // 1. Upload file
-      const uploadResponse = await fetch("/api/vector_stores/upload_file", {
+      // Assume this endpoint uploads the file to OpenAI /files and returns { id: "file-xxx..." }
+      const uploadResponse = await fetch("/api/files/upload", { // <-- UPDATED ENDPOINT
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileObject,
-        }),
+        body: JSON.stringify({ fileObject }),
       });
+
       if (!uploadResponse.ok) {
-        throw new Error("Error uploading file");
+        const errorData = await uploadResponse.json().catch(() => ({})); // Try to get error details
+        console.error("Upload failed:", uploadResponse.status, errorData);
+        throw new Error(`Error uploading file: ${uploadResponse.statusText} ${JSON.stringify(errorData)}`);
       }
+
       const uploadData = await uploadResponse.json();
-      const fileId = uploadData.id;
+      fileId = uploadData.id;
       if (!fileId) {
-        throw new Error("Error getting file ID");
+        throw new Error("File ID not received after upload.");
       }
-      console.log("Uploaded file:", uploadData);
+      console.log("Step 1 Complete: File Uploaded. File ID:", fileId);
 
-      let finalVectorStoreId = vectorStoreId;
 
-      // 2. If no vector store is linked, create one
-      if (!vectorStoreId || vectorStoreId === "") {
-        const createResponse = await fetch("/api/vector_stores/create_store", {
+      // --- Step 2: Ensure Vector Store Exists ---
+      console.log("Step 2: Checking Vector Store...");
+      if (!finalVectorStoreId || finalVectorStoreId === "") {
+        console.log("No vector store linked, creating a new one...");
+        // Assume this endpoint creates a store via OpenAI /vector_stores and returns { id: "vs_yyy..." }
+        const createResponse = await fetch("/api/vector_stores/create_store", { // <-- SAME AS BEFORE (for creation)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -135,39 +144,66 @@ export default function FileUpload({
           }),
         });
         if (!createResponse.ok) {
-          throw new Error("Error creating vector store");
+          const errorData = await createResponse.json().catch(() => ({}));
+          console.error("Store creation failed:", createResponse.status, errorData);
+          throw new Error(`Error creating vector store: ${createResponse.statusText} ${JSON.stringify(errorData)}`);
         }
         const createData = await createResponse.json();
         finalVectorStoreId = createData.id;
+        if (!finalVectorStoreId) {
+          throw new Error("Vector Store ID not received after creation.");
+        }
+        console.log("Step 2 Complete: New Vector Store Created. Store ID:", finalVectorStoreId);
+        // Update the parent component's state immediately after creation
+        onAddStore(finalVectorStoreId);
+      } else {
+        console.log("Step 2 Complete: Using existing Vector Store. Store ID:", finalVectorStoreId);
+        // If using an existing store ID passed via props, we might not need to call onAddStore again,
+        // unless the intention is to confirm/refresh the state. Let's assume it's not needed here.
       }
 
+
+      // --- Step 3: Associate File with Vector Store ---
+      console.log("Step 3: Associating file with vector store...");
       if (!finalVectorStoreId) {
-        throw new Error("Error getting vector store ID");
+        // This should theoretically not happen due to checks above, but safeguard anyway.
+        throw new Error("Cannot associate file, Vector Store ID is missing.");
       }
 
-      onAddStore(finalVectorStoreId);
-
-      // 3. Add file to vector store
-      const addFileResponse = await fetch("/api/vector_stores/add_file", {
+      // Assume this endpoint associates the file via OpenAI /vector_stores/{vs_id}/files and returns the association object
+      const associateResponse = await fetch("/api/vector_stores/associate_file", { // <-- UPDATED ENDPOINT
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fileId,
-          vectorStoreId: finalVectorStoreId,
+          fileId: fileId, // The ID from Step 1
+          vectorStoreId: finalVectorStoreId, // The ID from Step 2
         }),
       });
-      if (!addFileResponse.ok) {
-        throw new Error("Error adding file to vector store");
+
+      if (!associateResponse.ok) {
+         const errorData = await associateResponse.json().catch(() => ({}));
+         console.error("Association failed:", associateResponse.status, errorData);
+        // Note: Even if association fails, the file is uploaded and the store might exist.
+        // Depending on desired behavior, you might want to attempt cleanup or just report the error.
+        throw new Error(`Error associating file with vector store: ${associateResponse.statusText} ${JSON.stringify(errorData)}`);
       }
-      const addFileData = await addFileResponse.json();
-      console.log("Added file to vector store:", addFileData);
-      setFile(null);
-      setDialogOpen(false);
+
+      const associationData = await associateResponse.json();
+      console.log("Step 3 Complete: File associated with vector store:", associationData);
+
+      // --- Cleanup ---
+      setFile(null); // Clear the selected file
+      setDialogOpen(false); // Close the dialog
+
     } catch (error) {
-      console.error("Error during file upload process:", error);
-      alert("There was an error processing your file. Please try again.");
+      console.error("Error during file processing:", error);
+      // Provide more specific feedback if possible
+      const message = error instanceof Error ? error.message : "An unknown error occurred.";
+      alert(`There was an error processing your file: ${message}`);
+      // Decide if you want to clear the file on error or let the user retry
+      // setFile(null);
     } finally {
-      setUploading(false);
+      setUploading(false); // Ensure loading state is reset
     }
   };
 
