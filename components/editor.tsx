@@ -382,16 +382,16 @@ export default function Viewer() {
             <div 
               key={tab.id} 
               className={`
-                flex items-center border-r px-3 py-2 cursor-pointer
+                flex items-center border-r px-2 py-1.5 cursor-pointer text-xs
                 ${isActive ? 'bg-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}
               `}
               onClick={() => setActiveTab(tab.id)}
               title={tab.fileName}
             >
               {getFileIcon(file)}
-              <span className="text-sm font-medium mr-1 truncate max-w-[100px]">{tab.fileName}</span>
+              <span className="font-medium mr-1 truncate max-w-[120px]">{tab.fileName}</span>
               <button 
-                className="ml-1 p-1 rounded-full hover:bg-gray-200"
+                className="ml-0.5 p-0.5 rounded-full hover:bg-gray-200"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -399,7 +399,7 @@ export default function Viewer() {
                 }}
                 aria-label="Close tab"
               >
-                <X size={12} />
+                <X size={10} />
               </button>
             </div>
           );

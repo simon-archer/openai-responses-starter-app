@@ -193,28 +193,28 @@ function PanelSelector({
         <div className="relative" ref={dropdownRef}>
           <button 
             onClick={() => setIsOpen(!isOpen)} 
-            className="flex items-center gap-2 text-lg font-medium px-4 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-150 shadow-sm"
+            className="flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-150 shadow-sm"
             aria-expanded={isOpen}
             aria-haspopup="true"
           >
             {getPanelIcon(currentType)}
             <span>{currentType}</span>
             <ChevronDown 
-              size={16} 
-              className={`ml-1 opacity-70 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+              size={14} 
+              className={`opacity-70 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
             />
           </button>
           
           {isOpen && (
             <div 
-              className="absolute top-full left-0 mt-1 bg-white rounded-lg z-10 w-auto min-w-[160px] border border-gray-200 shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden transition-all duration-150 p-2 flex flex-col gap-1"
+              className="absolute top-full left-0 mt-1 bg-white rounded-lg z-10 w-auto min-w-[140px] border border-gray-200 shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden transition-all duration-150 p-1 flex flex-col gap-0.5"
               role="menu"
               aria-orientation="vertical"
             >
               {allowedTypes.map((type) => (
                 <button
                   key={type}
-                  className={`flex items-center w-full text-left px-3 py-2 text-sm transition-colors duration-150 rounded-md ${
+                  className={`flex items-center w-full text-left px-2 py-1.5 text-xs transition-colors duration-150 rounded-md ${
                     type === currentType 
                       ? "font-medium bg-blue-50 text-blue-700" 
                       : "text-gray-700 hover:bg-gray-50"
@@ -225,7 +225,7 @@ function PanelSelector({
                   }}
                   role="menuitem"
                 >
-                  <span className="mr-2.5">{getPanelIcon(type)}</span>
+                  <span className="mr-2">{getPanelIcon(type)}</span>
                   {type}
                 </button>
               ))}
@@ -339,7 +339,7 @@ export default function Main() {
             className="flex-none"
           >
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
                 <PanelSelector 
                   currentType={leftPanelType} 
                   onChange={setLeftPanelType}
@@ -361,7 +361,7 @@ export default function Main() {
             className="flex-1"
           >
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
                 <PanelSelector 
                   currentType={centerPanelType} 
                   onChange={setCenterPanelType}
@@ -376,7 +376,7 @@ export default function Main() {
           {/* Right Panel */}
           <div className="hidden md:block" style={{ width: `${rightPanelWidth}%`, height: `${availableHeight}px` }}>
             <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center p-4 border-b border-stone-100">
+              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
                 <PanelSelector 
                   currentType={rightPanelType} 
                   onChange={setRightPanelType}
