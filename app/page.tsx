@@ -1,5 +1,5 @@
 "use client";
-import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, FileText, PlusCircle, Download, Edit } from "lucide-react";
+import { Menu, X, ChevronDown, Upload, FolderPlus, Save, MessageCircle, MessageSquare, Wrench, FolderOpen, FileText, PlusCircle, Download, Edit, ChevronRight, ChevronLeft, Plus, Square } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ResizeCallbackData } from "react-resizable";
 import Assistant from "@/components/assistant";
@@ -18,10 +18,14 @@ type PanelContentType = "Conversations" | "Chat" | "Tools" | "Files" | "Viewer";
 function PanelSelector({ 
   currentType, 
   onChange,
+  onClose,
+  onAddPanel,
   allowedTypes = ["Conversations", "Chat", "Tools", "Files", "Viewer"]
 }: { 
   currentType: PanelContentType; 
   onChange: (type: PanelContentType) => void;
+  onClose?: () => void;
+  onAddPanel?: () => void;
   allowedTypes?: PanelContentType[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -189,7 +193,31 @@ function PanelSelector({
 
   return (
     <div className="flex items-center justify-between w-full">
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
+        {/* Panel management buttons */}
+        <div className="flex items-center gap-1">
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+              title="Close panel"
+            >
+              <X size={14} />
+            </button>
+          )}
+          {/* Add panel button */}
+          {onAddPanel && (
+            <button 
+              onClick={onAddPanel}
+              className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-600 transition-colors"
+              title="Add panel"
+            >
+              <Square size={14} />
+            </button>
+          )}
+        </div>
+
         <div className="relative" ref={dropdownRef}>
           <button 
             onClick={() => setIsOpen(!isOpen)} 
@@ -237,8 +265,10 @@ function PanelSelector({
         {renderToolbar()}
       </div>
       
-      {/* Panel-specific actions on the right */}
-      {renderPanelActions()}
+      <div className="flex items-center gap-1">
+        {/* Panel-specific actions */}
+        {renderPanelActions()}
+      </div>
     </div>
   );
 }
@@ -249,6 +279,14 @@ export default function Main() {
   const [centerPanelWidth, setCenterPanelWidth] = useState(60);
   const [rightPanelWidth, setRightPanelWidth] = useState(20);
   
+  // Panel visibility state
+  const [leftPanelVisible, setLeftPanelVisible] = useState(true);
+  const [centerPanelVisible, setCenterPanelVisible] = useState(true);
+  const [rightPanelVisible, setRightPanelVisible] = useState(true);
+  
+  // Available panel types for adding new panels
+  const [availablePanelTypes, setAvailablePanelTypes] = useState<PanelContentType[]>(["Conversations", "Chat", "Tools", "Files", "Viewer"]);
+
   // Panel content type state
   const [leftPanelType, setLeftPanelType] = useState<PanelContentType>("Conversations");
   const [centerPanelType, setCenterPanelType] = useState<PanelContentType>("Chat");
@@ -300,93 +338,316 @@ export default function Main() {
   useEffect(() => {
     if (!isClient) return;
     
-    // Adjust panel widths proportionally when needed
+    // Adjust panel widths proportionally if they don't add up to 100
+    // This mainly handles initial load or edge cases
     const totalWidth = leftPanelWidth + centerPanelWidth + rightPanelWidth;
-    if (totalWidth !== 100) {
-      const scaleFactor = 100 / totalWidth;
-      setLeftPanelWidth(Math.round(leftPanelWidth * scaleFactor));
-      setCenterPanelWidth(Math.round(centerPanelWidth * scaleFactor));
-      setRightPanelWidth(100 - leftPanelWidth - centerPanelWidth);
+    if (Math.abs(totalWidth - 100) > 0.1) { // Allow for minor float inaccuracies
+      // Handle single panel case
+      if ([leftPanelVisible, centerPanelVisible, rightPanelVisible].filter(Boolean).length === 1) {
+        if (leftPanelVisible) setLeftPanelWidth(100);
+        if (centerPanelVisible) setCenterPanelWidth(100);
+        if (rightPanelVisible) setRightPanelWidth(100);
+      } else {
+        const scaleFactor = 100 / totalWidth;
+        setLeftPanelWidth(leftPanelWidth * scaleFactor);
+        setCenterPanelWidth(centerPanelWidth * scaleFactor);
+        setRightPanelWidth(rightPanelWidth * scaleFactor);
+      }
     }
-  }, [isClient, windowSize, leftPanelWidth, centerPanelWidth, rightPanelWidth]);
+  }, [isClient, windowSize, leftPanelVisible, centerPanelVisible, rightPanelVisible]); 
 
   // Calculate available height considering padding
   const availableHeight = windowSize.height - 32; // Account for padding
 
   const handleLeftPanelResize = (e: React.SyntheticEvent, data: ResizeCallbackData) => {
     const newWidth = Math.round((data.size.width / windowSize.width) * 100);
-    setLeftPanelWidth(newWidth);
-    setCenterPanelWidth(100 - newWidth - rightPanelWidth);
+    
+    if (centerPanelVisible && rightPanelVisible) {
+      // Keep the ratio between center and right panels constant
+      const remainingWidth = 100 - newWidth;
+      const ratio = centerPanelWidth / (centerPanelWidth + rightPanelWidth);
+      const newCenterWidth = Math.round(remainingWidth * ratio);
+      
+      setLeftPanelWidth(newWidth);
+      setCenterPanelWidth(newCenterWidth);
+      setRightPanelWidth(100 - newWidth - newCenterWidth);
+    } else if (centerPanelVisible) {
+      setLeftPanelWidth(newWidth);
+      setCenterPanelWidth(100 - newWidth);
+    } else if (rightPanelVisible) {
+      setLeftPanelWidth(newWidth);
+      setRightPanelWidth(100 - newWidth);
+    }
   };
 
   const handleCenterPanelResize = (e: React.SyntheticEvent, data: ResizeCallbackData) => {
     const newWidth = Math.round((data.size.width / windowSize.width) * 100);
-    setCenterPanelWidth(newWidth);
-    setRightPanelWidth(100 - leftPanelWidth - newWidth);
+    
+    if (leftPanelVisible && rightPanelVisible) {
+      // When dragging center panel, adjust right panel to maintain 100% total
+      setCenterPanelWidth(newWidth);
+      setRightPanelWidth(100 - leftPanelWidth - newWidth);
+    } else if (leftPanelVisible) {
+      setCenterPanelWidth(newWidth);
+      setLeftPanelWidth(100 - newWidth);
+    } else if (rightPanelVisible) {
+      setCenterPanelWidth(newWidth);
+      setRightPanelWidth(100 - newWidth);
+    }
+  };
+
+  // Handle panel close
+  const handleCloseLeftPanel = () => {
+    setLeftPanelVisible(false);
+    // Distribute remaining width between center and right panels
+    if (centerPanelVisible && rightPanelVisible) {
+      const centerRatio = centerPanelWidth / (centerPanelWidth + rightPanelWidth);
+      setCenterPanelWidth(Math.round(100 * centerRatio));
+      setRightPanelWidth(Math.round(100 * (1 - centerRatio)));
+    } else if (centerPanelVisible) {
+      setCenterPanelWidth(100);
+    } else if (rightPanelVisible) {
+      setRightPanelWidth(100);
+    }
+    setLeftPanelWidth(0);
+  };
+
+  const handleCloseCenterPanel = () => {
+    setCenterPanelVisible(false);
+    // Distribute remaining width between left and right panels
+    if (leftPanelVisible && rightPanelVisible) {
+      const leftRatio = leftPanelWidth / (leftPanelWidth + rightPanelWidth);
+      setLeftPanelWidth(Math.round(100 * leftRatio));
+      setRightPanelWidth(Math.round(100 * (1 - leftRatio)));
+    } else if (leftPanelVisible) {
+      setLeftPanelWidth(100);
+    } else if (rightPanelVisible) {
+      setRightPanelWidth(100);
+    }
+    setCenterPanelWidth(0);
+  };
+
+  const handleCloseRightPanel = () => {
+    setRightPanelVisible(false);
+    // Distribute remaining width between left and center panels
+    if (leftPanelVisible && centerPanelVisible) {
+      const leftRatio = leftPanelWidth / (leftPanelWidth + centerPanelWidth);
+      setLeftPanelWidth(Math.round(100 * leftRatio));
+      setCenterPanelWidth(Math.round(100 * (1 - leftRatio)));
+    } else if (leftPanelVisible) {
+      setLeftPanelWidth(100);
+    } else if (centerPanelVisible) {
+      setCenterPanelWidth(100);
+    }
+    setRightPanelWidth(0);
+  };
+
+  // State for panel type selector
+  const [selectingPanelType, setSelectingPanelType] = useState(false);
+  
+  // Simple approach: add a new panel to the right of all existing panels
+  const handleAddPanel = () => {
+    // If right panel is not visible, show it
+    if (!rightPanelVisible) {
+      setRightPanelVisible(true);
+      setRightPanelType("Files");
+      
+      // Calculate new widths
+      if (leftPanelVisible && centerPanelVisible) {
+        // All three panels will be visible, distribute proportionally
+        const totalCurrentWidth = leftPanelWidth + centerPanelWidth;
+        const scaleFactor = 80 / totalCurrentWidth; // Reserve 20% for right panel
+        setLeftPanelWidth(Math.round(leftPanelWidth * scaleFactor));
+        setCenterPanelWidth(Math.round(centerPanelWidth * scaleFactor));
+        setRightPanelWidth(20);
+      } else if (leftPanelVisible) {
+        // Only left panel is visible, give 70/30 split
+        setLeftPanelWidth(70);
+        setRightPanelWidth(30);
+      } else if (centerPanelVisible) {
+        // Only center panel is visible, give 70/30 split
+        setCenterPanelWidth(70);
+        setRightPanelWidth(30);
+      }
+      return;
+    }
+    
+    // If center panel is not visible, show it
+    if (!centerPanelVisible) {
+      setCenterPanelVisible(true);
+      setCenterPanelType("Chat");
+      
+      // Calculate new widths
+      if (leftPanelVisible && rightPanelVisible) {
+        // All three panels will be visible, distribute proportionally
+        const totalCurrentWidth = leftPanelWidth + rightPanelWidth;
+        const scaleFactor = 80 / totalCurrentWidth; // Reserve 20% for center panel
+        setLeftPanelWidth(Math.round(leftPanelWidth * scaleFactor));
+        setRightPanelWidth(Math.round(rightPanelWidth * scaleFactor));
+        setCenterPanelWidth(20);
+      } else if (leftPanelVisible) {
+        // Only left panel is visible, give 70/30 split
+        setLeftPanelWidth(70);
+        setCenterPanelWidth(30);
+      } else if (rightPanelVisible) {
+        // Only right panel is visible, give 70/30 split
+        setCenterPanelWidth(30);
+        setRightPanelWidth(70);
+      }
+      return;
+    }
+    
+    // If left panel is not visible, show it
+    if (!leftPanelVisible) {
+      setLeftPanelVisible(true);
+      setLeftPanelType("Conversations");
+      
+      // Calculate new widths
+      if (centerPanelVisible && rightPanelVisible) {
+        // All three panels will be visible, distribute proportionally
+        const totalCurrentWidth = centerPanelWidth + rightPanelWidth;
+        const scaleFactor = 80 / totalCurrentWidth; // Reserve 20% for left panel
+        setCenterPanelWidth(Math.round(centerPanelWidth * scaleFactor));
+        setRightPanelWidth(Math.round(rightPanelWidth * scaleFactor));
+        setLeftPanelWidth(20);
+      } else if (centerPanelVisible) {
+        // Only center panel is visible, give 70/30 split
+        setLeftPanelWidth(30);
+        setCenterPanelWidth(70);
+      } else if (rightPanelVisible) {
+        // Only right panel is visible, give 70/30 split
+        setLeftPanelWidth(30);
+        setRightPanelWidth(70);
+      }
+      return;
+    }
+    
+    // If all panels are already visible, show a message or do nothing
+    console.log("All panels are already visible");
+  };
+
+  // Show options to add a new panel if none are visible
+  const handleEmptyStateAddPanel = () => {
+    setCenterPanelVisible(true);
+    setCenterPanelWidth(100);
+    setCenterPanelType("Chat");
   };
 
   return (
-    <div className="flex h-screen p-4 gap-4 bg-gray-100">
+    <div className="flex h-screen p-4 bg-gray-100 relative">
       {isClient && (
         <div className="flex gap-4 h-full w-full">
           {/* Left Panel */}
-          <ResizablePanel
-            width={windowSize.width * (leftPanelWidth / 100)}
-            height={availableHeight}
-            minConstraints={[200, availableHeight]}
-            maxConstraints={[windowSize.width * 0.3, availableHeight]}
-            onResize={handleLeftPanelResize}
-            className="flex-none"
-          >
-            <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
-                <PanelSelector 
-                  currentType={leftPanelType} 
-                  onChange={setLeftPanelType}
-                />
+          {leftPanelVisible && (
+            <ResizablePanel
+              width={windowSize.width * (leftPanelWidth / 100)}
+              height={availableHeight}
+              minConstraints={[240, availableHeight]}
+              maxConstraints={[windowSize.width * (centerPanelVisible && rightPanelVisible ? 0.4 : 0.95), availableHeight]}
+              onResize={handleLeftPanelResize}
+              className="flex-none"
+            >
+              <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
+                <div className="flex-none flex justify-between items-center px-3 py-2 border-b border-stone-100">
+                  <PanelSelector 
+                    currentType={leftPanelType} 
+                    onChange={setLeftPanelType}
+                    onClose={handleCloseLeftPanel}
+                    onAddPanel={handleAddPanel}
+                  />
+                </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {renderPanelContent(leftPanelType)}
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                {renderPanelContent(leftPanelType)}
-              </div>
-            </div>
-          </ResizablePanel>
+            </ResizablePanel>
+          )}
 
           {/* Center Panel */}
-          <ResizablePanel
-            width={windowSize.width * (centerPanelWidth / 100)}
-            height={availableHeight}
-            minConstraints={[400, availableHeight]}
-            maxConstraints={[windowSize.width * 0.7, availableHeight]}
-            onResize={handleCenterPanelResize}
-            className="flex-1"
-          >
-            <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
-                <PanelSelector 
-                  currentType={centerPanelType} 
-                  onChange={setCenterPanelType}
-                />
+          {centerPanelVisible && (
+            <ResizablePanel
+              width={windowSize.width * (centerPanelWidth / 100)}
+              height={availableHeight}
+              minConstraints={[480, availableHeight]}
+              maxConstraints={[windowSize.width * (leftPanelVisible && rightPanelVisible ? 0.8 : 0.95), availableHeight]}
+              onResize={handleCenterPanelResize}
+              className="flex-1"
+            >
+              <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
+                <div className="flex-none flex justify-between items-center px-3 py-2 border-b border-stone-100">
+                  <PanelSelector 
+                    currentType={centerPanelType} 
+                    onChange={setCenterPanelType}
+                    onClose={handleCloseCenterPanel}
+                    onAddPanel={handleAddPanel}
+                  />
+                </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {renderPanelContent(centerPanelType)}
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                {renderPanelContent(centerPanelType)}
-              </div>
-            </div>
-          </ResizablePanel>
+            </ResizablePanel>
+          )}
 
           {/* Right Panel */}
-          <div className="hidden md:block" style={{ width: `${rightPanelWidth}%`, height: `${availableHeight}px` }}>
-            <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center px-3 py-2 border-b border-stone-100">
-                <PanelSelector 
-                  currentType={rightPanelType} 
-                  onChange={setRightPanelType}
-                />
+          {rightPanelVisible && (
+            <ResizablePanel
+              width={windowSize.width * (rightPanelWidth / 100)}
+              height={availableHeight}
+              minConstraints={[280, availableHeight]}
+              maxConstraints={[windowSize.width * (leftPanelVisible && centerPanelVisible ? 0.4 : 0.95), availableHeight]}
+              onResize={(e: React.SyntheticEvent, data: ResizeCallbackData) => {
+                const newWidth = Math.round((data.size.width / windowSize.width) * 100);
+                
+                if (leftPanelVisible && centerPanelVisible) {
+                  // Keep the ratio between left and center panels constant
+                  const remainingWidth = 100 - newWidth;
+                  const ratio = leftPanelWidth / (leftPanelWidth + centerPanelWidth);
+                  const newLeftWidth = Math.round(remainingWidth * ratio);
+                  
+                  setRightPanelWidth(newWidth);
+                  setLeftPanelWidth(newLeftWidth);
+                  setCenterPanelWidth(100 - newWidth - newLeftWidth);
+                } else if (centerPanelVisible) {
+                  setRightPanelWidth(newWidth);
+                  setCenterPanelWidth(100 - newWidth);
+                } else if (leftPanelVisible) {
+                  setRightPanelWidth(newWidth);
+                  setLeftPanelWidth(100 - newWidth);
+                } else {
+                  setRightPanelWidth(100);
+                }
+              }}
+              className="flex-none"
+            >
+              <div className="h-full rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col">
+                <div className="flex-none flex justify-between items-center px-3 py-2 border-b border-stone-100">
+                  <PanelSelector 
+                    currentType={rightPanelType} 
+                    onChange={setRightPanelType}
+                    onClose={handleCloseRightPanel}
+                    onAddPanel={handleAddPanel}
+                  />
+                </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {renderPanelContent(rightPanelType)}
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                {renderPanelContent(rightPanelType)}
-              </div>
-            </div>
-          </div>
+            </ResizablePanel>
+          )}
+        </div>
+      )}
+
+      {/* Empty state - when no panels are visible */}
+      {isClient && !leftPanelVisible && !centerPanelVisible && !rightPanelVisible && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <button
+            onClick={handleEmptyStateAddPanel}
+            className="px-4 py-2.5 rounded-lg bg-white hover:bg-gray-50 text-gray-700 flex items-center gap-2 text-sm transition-colors shadow-sm border border-gray-200"
+          >
+            <Plus size={16} />
+            <span>Add Panel</span>
+          </button>
         </div>
       )}
 
