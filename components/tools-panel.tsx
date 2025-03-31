@@ -2,7 +2,6 @@
 import React from "react";
 import PanelConfig from "./panel-config";
 import WebSearchConfig from "./websearch-config";
-import FileSearchSetup from "./file-search-setup";
 import FunctionsView from "./functions-view";
 import { useTools } from "./context/tools-context";
 
@@ -12,17 +11,20 @@ export default function ToolsPanel() {
     setSelectedTool,
     webSearchEnabled,
     setWebSearchEnabled,
-    fileSearchEnabled,
-    setFileSearchEnabled,
     functionsEnabled,
     setFunctionsEnabled
   } = useTools();
 
   const toolOptions = [
     { id: "websearch", label: "Web" },
-    { id: "file-search", label: "Files" },
     { id: "functions", label: "Funcs" }
   ];
+
+  React.useEffect(() => {
+    if (selectedTool === "file-search") {
+      setSelectedTool("websearch");
+    }
+  }, [selectedTool, setSelectedTool]);
 
   const renderToolContent = () => {
     switch (selectedTool) {
@@ -37,17 +39,6 @@ export default function ToolsPanel() {
             <WebSearchConfig />
           </PanelConfig>
         );
-      case "file-search":
-        return (
-          <PanelConfig
-            title="File Search"
-            tooltip="Allows to search a knowledge base"
-            enabled={fileSearchEnabled}
-            setEnabled={setFileSearchEnabled}
-          >
-            <FileSearchSetup />
-          </PanelConfig>
-        );
       case "functions":
         return (
           <PanelConfig
@@ -60,6 +51,9 @@ export default function ToolsPanel() {
           </PanelConfig>
         );
       default:
+        if (!toolOptions.some(opt => opt.id === selectedTool)) {
+           return <p className="text-sm text-gray-500 p-4">Select a tool above.</p>;
+        }
         return null;
     }
   };
@@ -67,7 +61,6 @@ export default function ToolsPanel() {
   return (
     <div className="h-full w-full bg-white flex flex-col">
       <div className="p-2 border-b">
-        {/* Simple segmented control */}
         <div className="flex rounded-md overflow-hidden border border-gray-200 divide-x divide-gray-200">
           {toolOptions.map(option => (
             <button

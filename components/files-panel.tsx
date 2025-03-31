@@ -1,7 +1,10 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson } from "lucide-react";
+import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
+import { useTools } from "./context/tools-context";
+import FileSearchSetup from "./file-search-setup";
+import PanelConfig from "./panel-config";
 
 // Get file icon based on file type/extension
 function getFileIcon(fileName: string, mimeType?: string) {
@@ -45,6 +48,8 @@ export default function FilesPanel() {
     openFileInTab,
     deleteFile
   } = useFiles();
+  
+  const { fileSearchEnabled, setFileSearchEnabled } = useTools();
 
   const [contextMenu, setContextMenu] = useState<{
     show: boolean;
@@ -57,6 +62,8 @@ export default function FilesPanel() {
     y: 0,
     fileId: ""
   });
+
+  const [showSettings, setShowSettings] = useState(false);
 
   // Ref for detecting clicks outside the context menu
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -194,8 +201,43 @@ export default function FilesPanel() {
           <div className="flex justify-center items-center h-20">
             <p className="text-sm text-gray-500">Loading files...</p>
           </div>
-        ) : (
+        ) : files.length > 0 ? (
           renderFileTree(files)
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 pt-10">
+            <Folder size={32} className="mb-2" />
+            <p className="text-sm">No files uploaded yet.</p>
+            <p className="text-xs mt-1">Use the Upload button above.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Separator */}
+      <div className="border-t border-gray-200"></div>
+
+      {/* Settings Area */}
+      <div className="p-2">
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className="w-full flex items-center justify-between text-sm font-medium p-1.5 rounded hover:bg-gray-100 text-gray-600"
+        >
+          <span className="flex items-center">
+            <SlidersHorizontal size={14} className="mr-2" />
+            File Search Settings
+          </span>
+          {showSettings ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {showSettings && (
+          <div className="pt-2 pb-1 pl-1 pr-1 border-t border-gray-100 mt-2">
+            <PanelConfig
+              title="File Search"
+              tooltip="Allows searching content within uploaded files"
+              enabled={fileSearchEnabled}
+              setEnabled={setFileSearchEnabled}
+            >
+              <FileSearchSetup />
+            </PanelConfig>
+          </div>
         )}
       </div>
 
