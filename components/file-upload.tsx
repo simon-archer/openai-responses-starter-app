@@ -81,13 +81,20 @@ export default function FileUpload({
     setFile(null);
   };
 
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const arrayBufferToBase64 = (buffer: ArrayBuffer, mimeType?: string) => {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return btoa(binary);
+    const base64 = btoa(binary);
+    
+    // For PDFs, add the data URL prefix
+    if (mimeType === 'application/pdf') {
+      return `data:application/pdf;base64,${base64}`;
+    }
+    
+    return base64;
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -105,14 +112,15 @@ export default function FileUpload({
       // --- Step 0: Save file locally first ---
       console.log("Step 0: Saving file locally...");
       const arrayBuffer = await file.arrayBuffer();
-      const base64Content = arrayBufferToBase64(arrayBuffer);
+      const mimeType = file.type || getMimeTypeFromExtension(file.name);
+      const base64Content = arrayBufferToBase64(arrayBuffer, mimeType);
       
       const localFile = {
         id: crypto.randomUUID(),
         name: file.name,
         type: "file" as const,
         content: base64Content,
-        mimeType: file.type || getMimeTypeFromExtension(file.name),
+        mimeType: mimeType,
         parentId: null
       };
 
