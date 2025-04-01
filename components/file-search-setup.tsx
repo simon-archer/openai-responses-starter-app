@@ -9,6 +9,16 @@ import VectorStoreService from "@/services/vector-store-service";
 import { useVectorStore } from "@/components/context/vector-store-context";
 import { toast } from "react-hot-toast";
 
+// Helper function to format bytes
+function formatBytes(bytes: number, decimals = 2): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
 export default function FileSearchSetup() {
   const { currentVectorStore, isLoading, setVectorStore, syncFiles } = useVectorStore();
   const [newStoreId, setNewStoreId] = useState<string>("");
@@ -56,12 +66,9 @@ export default function FileSearchSetup() {
 
   return (
     <div>
-      <div className="text-sm text-zinc-500 dark:text-zinc-400">
-        Enter an existing vector store ID to search its files.
-      </div>
-      <div className="flex items-center gap-2 mt-2 h-10">
+      <div className="flex items-center gap-2 h-10 mb-2">
         <div className="flex items-center gap-2 w-full">
-          <div className="text-sm font-medium text-nowrap">
+          <div className="text-sm font-medium w-24 text-nowrap shrink-0">
             Vector store
           </div>
           {currentVectorStore?.id ? (
@@ -71,7 +78,7 @@ export default function FileSearchSetup() {
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <div 
-                                className="group flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 text-xs font-mono flex-1 text-ellipsis truncate cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 px-1.5 py-1 rounded transition-colors"
+                                className="group flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 text-xs font-mono flex-1 text-ellipsis truncate cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 px-1.5 py-0.5 rounded transition-colors"
                                 onClick={() => copyToClipboard(currentVectorStore.id)}
                             >
                                 {isCopied ? (
@@ -148,6 +155,23 @@ export default function FileSearchSetup() {
           )}
         </div>
       </div>
+
+      {currentVectorStore && (
+        <div className="text-xs text-zinc-500 dark:text-zinc-400 space-y-1 pl-1 mt-1">
+          {currentVectorStore.name && (
+            <div><strong>Name:</strong> {currentVectorStore.name}</div>
+          )}
+          {currentVectorStore.status && (
+            <div><strong>Status:</strong> <span className={`font-medium ${currentVectorStore.status === 'completed' ? 'text-green-600' : 'text-yellow-600'}`}>{currentVectorStore.status}</span></div>
+          )}
+          {currentVectorStore.file_counts && (
+            <div><strong>Files:</strong> {currentVectorStore.file_counts.completed} completed / {currentVectorStore.file_counts.total} total</div>
+          )}
+           {currentVectorStore.usage_bytes !== undefined && (
+            <div><strong>Usage:</strong> {formatBytes(currentVectorStore.usage_bytes)}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
