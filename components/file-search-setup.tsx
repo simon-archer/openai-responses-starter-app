@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import useToolsStore from "@/stores/useToolsStore";
 import FileUpload from "@/components/file-upload";
 import { Input } from "./ui/input";
@@ -25,13 +25,32 @@ export default function FileSearchSetup() {
   const { setVectorStore: setFilesVectorStore } = useFiles();
   const [newStoreId, setNewStoreId] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
+  const [lastSyncedId, setLastSyncedId] = useState<string | null>(null);
+
+  // Log vector store state on mount and when it changes
+  useEffect(() => {
+    console.log("[FileSearchSetup] Current vector store state:", vectorStore);
+    // Ensure files context is synchronized with tools store, but only if the ID has changed
+    if (vectorStore?.id && vectorStore.id !== lastSyncedId) {
+      console.log("[FileSearchSetup] Synchronizing vector store with files context:", vectorStore.id);
+      setLastSyncedId(vectorStore.id);
+      setFilesVectorStore(vectorStore.id);
+    } else if (!vectorStore?.id && lastSyncedId !== null) {
+      console.log("[FileSearchSetup] Clearing vector store sync state");
+      setLastSyncedId(null);
+      setFilesVectorStore(null);
+    }
+  }, [vectorStore, setFilesVectorStore, lastSyncedId]);
 
   const unlinkStore = async () => {
+    console.log("[FileSearchSetup] Unlinking vector store");
     setVectorStore({
       id: "",
       name: "",
     });
+    console.log("[FileSearchSetup] Clearing vector store in files context");
     await setFilesVectorStore(null);
+    setLastSyncedId(null);
   };
 
   const handleAddStore = async (storeId: string) => {

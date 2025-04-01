@@ -37,9 +37,9 @@ export type TabItem = {
   mimeType?: string;
 };
 
-interface FilesContextType {
+export type FilesContextType = {
   files: FileItem[];
-  expandedFolders: Record<string, boolean>;
+  expandedFolders: { [key: string]: boolean };
   isLoading: boolean;
   selectedFileId: string | null;
   selectedFile: FileItem | null;
@@ -47,18 +47,20 @@ interface FilesContextType {
   activeTabId: string | null;
   toggleFolder: (folderId: string) => void;
   selectFile: (fileId: string) => void;
+  findFileById: (fileId: string, items: FileItem[]) => FileItem | null;
   openFileInTab: (fileId: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  deleteFile: (fileId: string) => Promise<void>;
+  setFiles: (files: FileItem[]) => void;
   uploadFile: (file: File) => Promise<void>;
   createFolder: (name: string) => Promise<void>;
-  deleteFile: (fileId: string) => Promise<void>;
   refreshFile: (file: FileItem) => void;
-  findFileById: (fileId: string, fileList: FileItem[]) => FileItem | null;
   setVectorStore: (vectorStoreId: string | null) => Promise<void>;
   currentVectorStoreId: string | null;
-  linkLocalFileToVectorStore: (localFileId: string, vectorStoreFileId: string, vectorStoreId: string) => Promise<void>;
-}
+  linkFileToVectorStore: (fileId: string) => Promise<void>;
+  unlinkFileFromVectorStore: (fileId: string) => Promise<void>;
+};
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
 
@@ -214,15 +216,27 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
   // Add function to set current vector store
   const setVectorStore = async (vectorStoreId: string | null) => {
     console.log("[FilesContext] Setting vector store:", vectorStoreId);
-    if (vectorStoreId) {
-      await fetchVectorStoreFiles(vectorStoreId);
+    // Only fetch files if the vector store ID has actually changed
+    if (vectorStoreId !== currentVectorStoreId) {
+      if (vectorStoreId) {
+        console.log("[FilesContext] Fetching vector store files...");
+        await fetchVectorStoreFiles(vectorStoreId);
+        console.log("[FilesContext] Vector store files fetched and currentVectorStoreId set to:", vectorStoreId);
+      } else {
+        console.log("[FilesContext] Clearing vector store files");
+        setVectorStoreFiles([]);
+        setCurrentVectorStoreId(null);
+      }
+      await loadFiles();
     } else {
-      console.log("[FilesContext] Clearing vector store files");
-      setVectorStoreFiles([]);
-      setCurrentVectorStoreId(null);
+      console.log("[FilesContext] Vector store ID unchanged, skipping fetch");
     }
-    await loadFiles();
   };
+
+  // Add effect to log vector store state changes
+  useEffect(() => {
+    console.log("[FilesContext] Current vector store ID changed to:", currentVectorStoreId);
+  }, [currentVectorStoreId]);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -490,83 +504,143 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   };
 
-  // Function to delete a file or folder
-  const deleteFile = async (fileId: string): Promise<void> => {
-    if (!isBrowser) return Promise.resolve();
-    
+  // Function to link a file to the vector store
+  const linkFileToVectorStore = async (fileId: string) => {
     try {
-      // Find the file/folder
-      const fileToDelete = findFileById(fileId, files);
-      if (!fileToDelete) {
-        console.error("File not found:", fileId);
-        return Promise.resolve();
+      setIsLoading(true);
+      const file = findFileById(fileId, files);
+      if (!file || !currentVectorStoreId) return;
+
+      // Upload to OpenAI
+      const response = await fetch("/api/files/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileObject: {
+            name: file.name,
+            content: file.content
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload to vector store');
       }
-      
-      try {
-        // Delete from IndexedDB
-        await dbService.deleteFile(fileId);
-        
-        // If it's an open tab, close it
-        const tabWithFile = openTabs.find(tab => tab.fileId === fileId);
-        if (tabWithFile) {
-          closeTab(tabWithFile.id);
-        }
-        
-        // If it's the selected file, clear selection
-        if (selectedFileId === fileId) {
-          setSelectedFileId(null);
-          setSelectedFile(null);
-        }
-        
-        // Remove from state
-        if (fileToDelete.parentId) {
-          // It's a child item
-          setFiles(prevFiles => {
-            return updateFileTree(prevFiles, fileToDelete.parentId!, (parent) => {
-              if (!parent.children) return parent;
-              return {
-                ...parent,
-                children: parent.children.filter(child => child.id !== fileId)
-              };
-            });
-          });
-        } else {
-          // It's a root item
-          setFiles(prevFiles => prevFiles.filter(file => file.id !== fileId));
-        }
-        
-        console.log("File deleted successfully:", fileToDelete.name);
-      } catch (dbError) {
-        console.error("Error with IndexedDB deletion:", dbError);
-        throw new Error(`Failed to delete file from database: ${dbError}`);
+
+      const { id: openAiFileId } = await response.json();
+
+      // Associate with vector store
+      const associateResponse = await fetch("/api/vector_stores/associate_file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileId: openAiFileId,
+          vectorStoreId: currentVectorStoreId
+        })
+      });
+
+      if (!associateResponse.ok) {
+        throw new Error('Failed to associate with vector store');
       }
+
+      // Update local file
+      const updatedFile = {
+        ...file,
+        vectorStoreFileId: openAiFileId,
+        vectorStoreId: currentVectorStoreId
+      };
+      await dbService.updateFile(updatedFile);
+
+      // Refresh files list
+      await loadFiles();
     } catch (error) {
-      console.error("Error deleting file:", error);
-      // Don't rethrow to prevent unhandled promise rejection
-      return Promise.resolve();
+      console.error("Error linking file:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Helper function to update an item in the file tree
-  const updateFileTree = (
-    files: FileItem[], 
-    fileIdToUpdate: string, 
-    updateFn: (file: FileItem) => FileItem
-  ): FileItem[] => {
-    return files.map(file => {
-      if (file.id === fileIdToUpdate) {
-        return updateFn(file);
+  // Function to unlink a file from the vector store
+  const unlinkFileFromVectorStore = async (fileId: string) => {
+    try {
+      setIsLoading(true);
+      const file = findFileById(fileId, files);
+      if (!file?.vectorStoreFileId) return;
+
+      // Unlink from vector store
+      const response = await fetch("/api/files/unlink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId: file.vectorStoreFileId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to unlink from vector store');
       }
-      
-      if (file.type === 'folder' && file.children) {
-        return {
-          ...file,
-          children: updateFileTree(file.children, fileIdToUpdate, updateFn)
-        };
+
+      // Update local file
+      const updatedFile = {
+        ...file,
+        vectorStoreFileId: undefined,
+        vectorStoreId: undefined
+      };
+      await dbService.updateFile(updatedFile);
+
+      // Refresh files list
+      await loadFiles();
+    } catch (error) {
+      console.error("Error unlinking file:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Enhanced delete function to handle both local and vector store files
+  const deleteFile = async (fileId: string): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const file = findFileById(fileId, files);
+      if (!file) return;
+
+      // If file is linked to vector store, delete it there first
+      if (file.vectorStoreFileId) {
+        try {
+          await fetch("/api/files/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fileId: file.vectorStoreFileId })
+          });
+        } catch (error) {
+          console.error("Error deleting from vector store:", error);
+          // Continue with local deletion even if vector store deletion fails
+        }
       }
-      
-      return file;
-    });
+
+      // Delete locally
+      await dbService.deleteFile(fileId);
+
+      // Close tab if open
+      const tabWithFile = openTabs.find(tab => tab.fileId === fileId);
+      if (tabWithFile) {
+        closeTab(tabWithFile.id);
+      }
+
+      // Clear selection if selected
+      if (selectedFileId === fileId) {
+        setSelectedFileId(null);
+        setSelectedFile(null);
+      }
+
+      // Refresh files list
+      await loadFiles();
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Method to refresh a file after it's been updated
@@ -597,30 +671,34 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const value = {
+    files,
+    expandedFolders,
+    isLoading,
+    selectedFileId,
+    selectedFile,
+    openTabs,
+    activeTabId,
+    toggleFolder,
+    selectFile,
+    findFileById,
+    openFileInTab,
+    closeTab,
+    setActiveTab,
+    deleteFile,
+    setFiles,
+    uploadFile,
+    createFolder,
+    refreshFile,
+    setVectorStore,
+    currentVectorStoreId,
+    linkFileToVectorStore,
+    unlinkFileFromVectorStore
+  };
+
   return (
     <FilesContext.Provider
-      value={{
-        files,
-        expandedFolders,
-        isLoading,
-        selectedFileId,
-        selectedFile,
-        openTabs,
-        activeTabId,
-        toggleFolder,
-        selectFile,
-        openFileInTab,
-        closeTab,
-        setActiveTab,
-        uploadFile,
-        createFolder,
-        deleteFile,
-        refreshFile,
-        findFileById,
-        setVectorStore,
-        currentVectorStoreId,
-        linkLocalFileToVectorStore
-      }}
+      value={value}
     >
       {children}
     </FilesContext.Provider>

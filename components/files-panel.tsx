@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal } from "lucide-react";
+import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal, Link2, CloudOff } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
 import { useTools } from "./context/tools-context";
 import FileSearchSetup from "./file-search-setup";
@@ -8,7 +8,7 @@ import PanelConfig from "./panel-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 // Get file icon based on file type/extension
-function getFileIcon(fileName: string, mimeType?: string, isVectorStoreFile?: boolean) {
+function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
   let icon;
   
   // Check for Word files
@@ -37,19 +37,28 @@ function getFileIcon(fileName: string, mimeType?: string, isVectorStoreFile?: bo
     icon = <FileText size={16} className="mr-2 text-gray-500" />;
   }
 
-  // If it's a vector store file, wrap it with a tooltip
-  if (isVectorStoreFile) {
+  // If we have file status info, wrap it with a tooltip
+  if (file) {
+    const isLinked = !!file.vectorStoreFileId;
+    const statusIcon = isLinked ? (
+      <Link2 size={16} className="text-blue-500 mr-2" />
+    ) : (
+      <CloudOff size={16} className="text-gray-400 mr-2" />
+    );
+    
+    const tooltipText = isLinked ? "Linked to Vector Store" : "Local File Only";
+
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="relative">
+            <div className="flex items-center">
+              {statusIcon}
               {icon}
-              <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
             </div>
           </TooltipTrigger>
           <TooltipContent>
-            <p>Vector Store File</p>
+            <p>{tooltipText}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -68,7 +77,11 @@ export default function FilesPanel() {
     selectFile, 
     selectedFileId,
     openFileInTab,
-    deleteFile
+    deleteFile,
+    setFiles,
+    currentVectorStoreId,
+    linkFileToVectorStore,
+    unlinkFileFromVectorStore
   } = useFiles();
   
   const { fileSearchEnabled, setFileSearchEnabled } = useTools();
@@ -144,15 +157,55 @@ export default function FilesPanel() {
     });
   };
 
-  // Handle file delete with better error handling
+  // Handle file delete with confirmation and error handling
   const handleDeleteFile = async (fileId: string) => {
-    if (confirm("Are you sure you want to delete this file?")) {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+
+    const message = file.vectorStoreFileId 
+      ? "This will delete the file both locally and from the vector store. Are you sure?"
+      : "Are you sure you want to delete this file?";
+
+    if (confirm(message)) {
       try {
         await deleteFile(fileId);
       } catch (error) {
         console.error("Error deleting file:", error);
         alert("Failed to delete file");
       }
+    }
+    setContextMenu(prev => ({ ...prev, show: false }));
+  };
+
+  // Handle linking/unlinking file to/from vector store
+  const handleToggleVectorStore = async (fileId: string) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+
+    console.log("[FilesPanel] Attempting to toggle vector store for file:", file);
+    console.log("[FilesPanel] Current vector store ID:", currentVectorStoreId);
+    console.log("[FilesPanel] File search enabled:", fileSearchEnabled);
+
+    try {
+      if (file.vectorStoreFileId) {
+        // Unlink from vector store
+        if (confirm("Are you sure you want to unlink this file from the vector store?")) {
+          await unlinkFileFromVectorStore(fileId);
+        }
+      } else {
+        // Link to vector store
+        if (!currentVectorStoreId) {
+          console.log("[FilesPanel] No vector store ID found in files context");
+          alert("Please set up a vector store first in the File Search Settings.");
+          return;
+        }
+        await linkFileToVectorStore(fileId);
+      }
+    } catch (error) {
+      console.error("Error toggling vector store:", error);
+      alert(file.vectorStoreFileId 
+        ? "Failed to unlink file from vector store" 
+        : "Failed to link file to vector store");
     }
     setContextMenu(prev => ({ ...prev, show: false }));
   };
@@ -164,7 +217,7 @@ export default function FilesPanel() {
           <li key={item.id}>
             <div 
               className={`
-                flex items-center py-1 px-2 rounded-md text-sm group w-full
+                flex items-center p-1 pl-2 rounded-md text-sm group w-full
                 ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100' : 'cursor-pointer hover:bg-gray-100'}
                 ${item.type === 'file' && item.id === selectedFileId ? 'bg-gray-100 font-medium' : ''}
               `}
@@ -189,8 +242,8 @@ export default function FilesPanel() {
                     <Folder size={16} className="mr-1.5 flex-shrink-0 text-blue-500" />
                   </>
                 ) : (
-                  <span className="ml-5 mr-1.5 flex-shrink-0">
-                    {getFileIcon(item.name, item.mimeType, item.isVectorStoreFile)}
+                  <span className="flex-shrink-0 flex items-center mr-1.5">
+                    {getFileIcon(item.name, item.mimeType, item)}
                   </span>
                 )}
                 <span className="truncate">{item.name}</span>
@@ -198,7 +251,7 @@ export default function FilesPanel() {
               
               {/* File actions button */}
               <button 
-                className="ml-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full transition-opacity flex-shrink-0"
+                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full transition-opacity flex-shrink-0"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -276,6 +329,32 @@ export default function FilesPanel() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Vector Store Link/Unlink Button */}
+          {(() => {
+            const file = files.find(f => f.id === contextMenu.fileId);
+            if (!file || file.type !== 'file') return null;
+            
+            return (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 flex items-center"
+                onClick={() => handleToggleVectorStore(contextMenu.fileId)}
+              >
+                {file.vectorStoreFileId ? (
+                  <>
+                    <CloudOff size={14} className="mr-2" />
+                    Unlink from Vector Store
+                  </>
+                ) : (
+                  <>
+                    <Link2 size={14} className="mr-2" />
+                    Link to Vector Store
+                  </>
+                )}
+              </button>
+            );
+          })()}
+          
+          {/* Delete Button */}
           <button
             className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 flex items-center text-red-600"
             onClick={() => handleDeleteFile(contextMenu.fileId)}

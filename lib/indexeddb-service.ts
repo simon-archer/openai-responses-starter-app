@@ -120,7 +120,7 @@ class IndexedDBService implements IDBService {
 
         const transaction = this.db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.add(fileToSave);
+        const request = store.put(fileToSave);
 
         request.onsuccess = () => {
           resolve(fileToSave);
