@@ -188,10 +188,7 @@ function PdfViewer({ content }: { content: string }) {
   // Only render iframe when we have valid content
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="bg-gray-100 p-2">
-        <span className="text-sm font-medium">PDF Document</span>
-      </div>
-      <div className="flex-1 p-4 overflow-hidden">
+      <div className="flex-1 overflow-hidden">
         <object
           data={pdfObjectURL}
           type="application/pdf"
