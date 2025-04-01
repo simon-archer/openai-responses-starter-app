@@ -399,13 +399,8 @@ export default function FilesPanel() {
 
   return (
     <div className="h-full w-full bg-white dark:bg-gray-800 flex flex-col relative text-gray-900 dark:text-gray-100">
-      <div className="flex-1 overflow-y-auto p-3 h-full">
-        {isSyncing ? (
-          <div className="flex justify-center items-center h-20">
-            <Loader2 size={24} className="animate-spin text-gray-500" />
-            <p className="text-sm text-gray-500 ml-2">Loading files...</p>
-          </div>
-        ) : combinedFiles.length > 0 ? (
+      <div className="flex-1 overflow-y-auto p-3 h-full relative">
+        {(combinedFiles.length > 0 || isSyncing) ? (
           renderFileTree(combinedFiles)
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 pt-10">
