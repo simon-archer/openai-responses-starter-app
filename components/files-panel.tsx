@@ -2,9 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal, Link2, CloudOff, Cloud, Download, Loader2 } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
-import { useTools } from "./context/tools-context";
 import FileSearchSetup from "./file-search-setup";
-import PanelConfig from "./panel-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import FileService, { arrayBufferToBase64 as arrayBufferToBase64Util, getMimeTypeFromExtension } from "@/services/file-service";
 import VectorStoreService from "@/services/vector-store-service";
@@ -100,8 +98,6 @@ export default function FilesPanel() {
     findFileById,
     loadFiles: loadLocalFiles 
   } = useFiles();
-  
-  const { fileSearchEnabled, setFileSearchEnabled } = useTools();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -284,7 +280,7 @@ export default function FilesPanel() {
             const base64Content = arrayBufferToBase64Util(content);
             
             const newLocalFile: FileItem = {
-                id: placeholderFile.id.replace('placeholder-', 'local-'),
+                id: placeholderFile.id.replace(/^placeholder-/, 'local-'),
                 name: placeholderFile.name,
                 path: placeholderFile.path,
                 type: 'file',
@@ -431,14 +427,7 @@ export default function FilesPanel() {
         </button>
         {showSettings && (
           <div className="pt-2 pb-1 pl-1 pr-1 border-t border-gray-100 dark:border-gray-700 mt-2">
-            <PanelConfig
-              title="File Search"
-              tooltip="Connect to a vector store to enable file content search"
-              enabled={fileSearchEnabled}
-              setEnabled={setFileSearchEnabled}
-            >
-              <FileSearchSetup />
-            </PanelConfig>
+            <FileSearchSetup />
           </div>
         )}
       </div>

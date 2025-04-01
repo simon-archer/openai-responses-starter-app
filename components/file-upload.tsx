@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 import { dbService } from "@/lib/indexeddb-service";
+import { FileItem } from "@/components/context/files-context";
 
 interface FileUploadProps {
   vectorStoreId?: string;
@@ -115,9 +116,10 @@ export default function FileUpload({
       const mimeType = file.type || getMimeTypeFromExtension(file.name);
       const base64Content = arrayBufferToBase64(arrayBuffer, mimeType);
       
-      const localFile = {
+      const localFile: FileItem = {
         id: crypto.randomUUID(),
         name: file.name,
+        path: file.name,
         type: "file" as const,
         content: base64Content,
         mimeType: mimeType,
@@ -201,7 +203,7 @@ export default function FileUpload({
 
       // --- Step 4: Update local file with vector store info ---
       console.log("Step 4: Updating local file with vector store info...");
-      const updatedLocalFile = {
+      const updatedLocalFile: FileItem = {
         ...localFile,
         vectorStoreId: finalVectorStoreId,
         vectorStoreFileId: fileId

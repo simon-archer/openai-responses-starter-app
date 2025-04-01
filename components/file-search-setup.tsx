@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { Input } from "./ui/input";
-import { CircleX, RotateCw } from "lucide-react";
+import { CircleX, RotateCw, Copy, Check } from "lucide-react";
 import { TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Tooltip } from "./ui/tooltip";
 import { TooltipProvider } from "./ui/tooltip";
@@ -12,9 +12,9 @@ import { toast } from "react-hot-toast";
 export default function FileSearchSetup() {
   const { currentVectorStore, isLoading, setVectorStore, syncFiles } = useVectorStore();
   const [newStoreId, setNewStoreId] = useState<string>("");
+  const [isCopied, setIsCopied] = useState(false);
 
   const unlinkStore = async () => {
-    // Clear the vector store in the context
     await setVectorStore(null);
     toast.success("Vector store unlinked.");
   };
@@ -25,7 +25,6 @@ export default function FileSearchSetup() {
       toast.error("Please enter a vector store ID.");
       return;
     } 
-    // Add basic validation for the ID format
     if (!storeId.startsWith('vs_')) {
         toast.error("Invalid vector store ID format. It should start with 'vs_'.");
         return;
@@ -33,21 +32,26 @@ export default function FileSearchSetup() {
     
     try {
       console.log("[FileSearchSetup] Attempting to set vector store:", storeId);
-      // Call the context function which handles fetching and syncing
       await setVectorStore(storeId); 
-      // Toast success/error messages are handled within setVectorStore now
-      setNewStoreId(""); // Clear input on success/attempt
+      setNewStoreId("");
     } catch (error) { 
-      // Errors should be caught and handled within setVectorStore, 
-      // but adding a catch here for safety.
       console.error("[FileSearchSetup] Error in setVectorStore process:", error);
-      // No redundant toast here, context handles it.
     }
   };
 
-  // Function to trigger manual sync
   const handleSyncClick = async () => {
-      await syncFiles(); // Call the sync function from the context
+      await syncFiles();
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Vector Store ID copied!");
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }, (err) => {
+      toast.error("Failed to copy ID.");
+      console.error('Could not copy text: ', err);
+    });
   };
 
   return (
@@ -57,15 +61,32 @@ export default function FileSearchSetup() {
       </div>
       <div className="flex items-center gap-2 mt-2 h-10">
         <div className="flex items-center gap-2 w-full">
-          <div className="text-sm font-medium w-24 text-nowrap">
+          <div className="text-sm font-medium text-nowrap">
             Vector store
           </div>
           {currentVectorStore?.id ? (
             <div className="flex items-center justify-between flex-1 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="text-zinc-400 dark:text-zinc-500 text-xs font-mono flex-1 text-ellipsis truncate">
-                  {currentVectorStore.id}
-                </div>
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div 
+                                className="group flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 text-xs font-mono flex-1 text-ellipsis truncate cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 px-1.5 py-1 rounded transition-colors"
+                                onClick={() => copyToClipboard(currentVectorStore.id)}
+                            >
+                                {isCopied ? (
+                                    <Check size={12} className="flex-shrink-0 text-green-500" />
+                                ) : (
+                                    <Copy size={12} className="flex-shrink-0 opacity-70 group-hover:opacity-100" />
+                                )}
+                                <span className="truncate">{currentVectorStore.id}</span>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>{isCopied ? "Copied!" : "Click to copy ID"}</p>
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -85,8 +106,8 @@ export default function FileSearchSetup() {
                     <TooltipTrigger asChild>
                       <button 
                         onClick={handleSyncClick}
-                        disabled={isLoading} // Disable while any loading/syncing is happening
-                        className={`disabled:opacity-50 disabled:cursor-not-allowed`} // Basic disabled style
+                        disabled={isLoading}
+                        className={`disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
                         <RotateCw
                           size={16}
