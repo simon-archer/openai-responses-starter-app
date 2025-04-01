@@ -62,7 +62,55 @@ export default function FileViewer() {
       );
     }
 
-    // Render file content
+    // Handle PDF files
+    if (activeFile.mimeType === 'application/pdf' || activeFile.name.toLowerCase().endsWith('.pdf')) {
+      // Create object URL for PDF viewing
+      try {
+        // First, decode the base64 string
+        const binaryString = atob(activeFile.content);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        // Create blob and object URL
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        return (
+          <div className="h-full w-full">
+            <object
+              data={url}
+              type="application/pdf"
+              className="w-full h-full"
+            >
+              <div className="h-full w-full flex flex-col items-center justify-center text-gray-500">
+                <p className="mb-4">Unable to display PDF directly.</p>
+                <a
+                  href={url}
+                  download={activeFile.name}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                >
+                  Download PDF
+                </a>
+              </div>
+            </object>
+          </div>
+        );
+      } catch (error) {
+        console.error('Error displaying PDF:', error);
+        return (
+          <div className="h-full w-full flex flex-col items-center justify-center text-gray-500">
+            <FileText size={48} strokeWidth={1} className="mb-4" />
+            <p>Error displaying PDF file</p>
+            <p className="text-sm mt-2 text-gray-400">The file might be corrupted or in an unsupported format</p>
+          </div>
+        );
+      }
+    }
+
+    // Render text content
     return (
       <div className="p-4 h-full overflow-auto">
         <pre className="text-sm font-mono whitespace-pre-wrap">{activeFile.content}</pre>

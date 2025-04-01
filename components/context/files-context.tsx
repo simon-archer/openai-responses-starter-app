@@ -25,6 +25,9 @@ export type FileItem = {
   content?: string; // Sample content for demo purposes
   parentId?: string | null; // To track parent folder for flat storage
   isVectorStoreFile?: boolean; // Optional vector store file marker
+  vectorStoreId?: string; // ID of the vector store this file belongs to
+  localFileId?: string; // ID of the corresponding local file if this is a vector store file
+  vectorStoreFileId?: string; // ID of the corresponding vector store file if this is a local file
 };
 
 export type TabItem = {
@@ -54,6 +57,7 @@ interface FilesContextType {
   findFileById: (fileId: string, fileList: FileItem[]) => FileItem | null;
   setVectorStore: (vectorStoreId: string | null) => Promise<void>;
   currentVectorStoreId: string | null;
+  linkLocalFileToVectorStore: (localFileId: string, vectorStoreFileId: string, vectorStoreId: string) => Promise<void>;
 }
 
 const FilesContext = createContext<FilesContextType | undefined>(undefined);
@@ -125,54 +129,70 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
       const data = await response.json();
       console.log("[FilesContext] Vector store files received:", data);
       
+      // Get all local files to check for relationships
+      const localFiles = await dbService.getAllFiles();
+      
       if (data && Array.isArray(data) && data.length > 0) {
-        // Create a "Vector Store Files" folder
-        const vectorStoreFolder: FileItem = {
-          id: "vector-store-folder",
-          name: "Vector Store Files",
-          type: "folder",
-          parentId: null,
-          children: data.map((file: any) => ({
-            id: file.id,
-            name: file.name,
-            type: "file",
-            mimeType: file.mimeType,
-            parentId: "vector-store-folder",
-            isVectorStoreFile: true // Mark as vector store file
-          }))
-        };
+        // Update local files with vector store info if needed
+        for (const vectorFile of data) {
+          const matchingLocalFile = localFiles.find(
+            localFile => localFile.name === vectorFile.name
+          );
 
-        console.log("[FilesContext] Created vector store folder:", vectorStoreFolder);
-        setVectorStoreFiles([vectorStoreFolder]);
-      } else {
-        console.log("[FilesContext] No files found in vector store");
-        setVectorStoreFiles([]);
+          if (matchingLocalFile) {
+            // Update existing local file with vector store info
+            const updatedFile = {
+              ...matchingLocalFile,
+              vectorStoreId,
+              vectorStoreFileId: vectorFile.id,
+              isVectorStoreFile: true
+            };
+            await dbService.updateFile(updatedFile);
+          }
+        }
       }
+      
+      // Reload all files to get the updated state
+      const updatedFiles = await dbService.getAllFiles();
+      const fileTree = buildFileTree(updatedFiles);
+      setFiles(fileTree);
+      
       setCurrentVectorStoreId(vectorStoreId);
     } catch (error) {
       console.error('[FilesContext] Error fetching vector store files:', error);
-      setVectorStoreFiles([]);
+      setFiles([]);
     }
   }, []);
 
-  // Update loadFiles to include vector store files
+  // Add helper function to link local file to vector store file
+  const linkLocalFileToVectorStore = async (localFileId: string, vectorStoreFileId: string, vectorStoreId: string) => {
+    const localFile = await dbService.getFile(localFileId);
+    if (!localFile) return;
+
+    const updatedFile = {
+      ...localFile,
+      vectorStoreFileId,
+      vectorStoreId
+    };
+    await dbService.saveFile(updatedFile);
+    await loadFiles(); // Refresh the file list
+  };
+
+  // Update loadFiles to not add vector store files separately
   const loadFiles = useCallback(async () => {
     try {
       const dbFiles = await dbService.getAllFiles();
       if (dbFiles && dbFiles.length > 0) {
         const fileTree = buildFileTree(dbFiles);
-        // Combine local files with vector store files if they exist
-        setFiles([...fileTree, ...(vectorStoreFiles || [])]);
+        setFiles(fileTree);
       } else {
-        // If no local files, still show vector store files if they exist
-        setFiles(vectorStoreFiles || []);
+        setFiles([]);
       }
     } catch (error) {
       console.error("Error loading files:", error);
-      // If local files fail to load, still show vector store files
-      setFiles(vectorStoreFiles || []);
+      setFiles([]);
     }
-  }, [vectorStoreFiles]);
+  }, []);
 
   // Initialize files and vector store files
   useEffect(() => {
@@ -303,63 +323,81 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
       const arrayBuffer = await file.arrayBuffer();
       const base64Content = arrayBufferToBase64(arrayBuffer);
       
-      // Upload to vector store if one is connected
+      // Generate IDs for both local and vector store versions
+      const localFileId = generateUniqueId();
+      const vectorStoreFileId = generateUniqueId();
+
+      // Create the local file entry
+      const newLocalFile: FileItem = {
+        id: localFileId,
+        name: file.name,
+        type: "file",
+        mimeType: file.type || getMimeTypeFromExtension(file.name),
+        content: base64Content,
+        parentId: null,
+        vectorStoreFileId: undefined // Will be set if vector store upload succeeds
+      };
+
+      // Save local file first
+      await dbService.saveFile(newLocalFile);
+      
+      // If vector store is connected, upload there too
       if (currentVectorStoreId) {
-        // Step 1: Upload file to OpenAI
-        const uploadResponse = await fetch("/api/files/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileObject: {
-              name: file.name,
-              content: base64Content
-            }
-          })
-        });
+        try {
+          // Step 1: Upload file to OpenAI
+          const uploadResponse = await fetch("/api/files/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileObject: {
+                name: file.name,
+                content: base64Content
+              }
+            })
+          });
 
-        if (!uploadResponse.ok) {
-          throw new Error('Failed to upload file to OpenAI');
-        }
+          if (!uploadResponse.ok) {
+            throw new Error('Failed to upload file to OpenAI');
+          }
 
-        const uploadData = await uploadResponse.json();
-        const fileId = uploadData.id;
+          const uploadData = await uploadResponse.json();
+          const openAiFileId = uploadData.id;
 
-        // Step 2: Associate with vector store
-        const associateResponse = await fetch("/api/vector_stores/associate_file", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileId,
+          // Step 2: Associate with vector store
+          const associateResponse = await fetch("/api/vector_stores/associate_file", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileId: openAiFileId,
+              vectorStoreId: currentVectorStoreId
+            })
+          });
+
+          if (!associateResponse.ok) {
+            throw new Error('Failed to associate file with vector store');
+          }
+
+          // Update local file with vector store reference
+          const updatedLocalFile = {
+            ...newLocalFile,
+            vectorStoreFileId: vectorStoreFileId,
             vectorStoreId: currentVectorStoreId
-          })
-        });
+          };
+          await dbService.saveFile(updatedLocalFile);
 
-        if (!associateResponse.ok) {
-          throw new Error('Failed to associate file with vector store');
+          // Refresh vector store files
+          await fetchVectorStoreFiles(currentVectorStoreId);
+        } catch (vectorStoreError) {
+          console.error("Error uploading to vector store:", vectorStoreError);
+          // Don't fail the whole upload if vector store fails
         }
-
-        // Refresh vector store files
-        await fetchVectorStoreFiles(currentVectorStoreId);
-      } else {
-        // Handle regular file upload to IndexedDB
-        const newFile: FileItem = {
-          id: generateUniqueId(),
-          name: file.name,
-          type: "file",
-          mimeType: file.type || getMimeTypeFromExtension(file.name),
-          content: base64Content,
-          parentId: null
-        };
-        
-        await dbService.saveFile(newFile);
       }
 
       // Reload all files
       await loadFiles();
       
       // Open the file in a tab
-      // Note: For vector store files, we might need to handle this differently
-      // since we might not have immediate access to the content
+      openFileInTab(localFileId);
     } catch (error) {
       console.error("Error uploading file:", error);
       alert("Failed to upload file. Please try again.");
@@ -580,7 +618,8 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
         refreshFile,
         findFileById,
         setVectorStore,
-        currentVectorStoreId
+        currentVectorStoreId,
+        linkLocalFileToVectorStore
       }}
     >
       {children}

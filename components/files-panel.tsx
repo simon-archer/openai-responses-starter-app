@@ -5,36 +5,58 @@ import { useFiles, FileItem } from "./context/files-context";
 import { useTools } from "./context/tools-context";
 import FileSearchSetup from "./file-search-setup";
 import PanelConfig from "./panel-config";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 // Get file icon based on file type/extension
-function getFileIcon(fileName: string, mimeType?: string) {
+function getFileIcon(fileName: string, mimeType?: string, isVectorStoreFile?: boolean) {
+  let icon;
+  
   // Check for Word files
   if (mimeType === "application/msword" || 
       mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx')) {
-    return <FileText size={16} className="mr-2 text-blue-700" />; 
+    icon = <FileText size={16} className="mr-2 text-blue-700" />; 
   }
-  
   // Check for code files
-  if (mimeType === "application/javascript" || mimeType === "application/typescript" || 
+  else if (mimeType === "application/javascript" || mimeType === "application/typescript" || 
       mimeType?.includes("jsx") || mimeType?.includes("tsx") ||
       fileName.endsWith(".js") || fileName.endsWith(".jsx") || fileName.endsWith(".ts") || 
       fileName.endsWith(".tsx") || fileName.endsWith(".css") || fileName.endsWith(".html")) {
-    return <FileCode size={16} className="mr-2 text-blue-500" />;
+    icon = <FileCode size={16} className="mr-2 text-blue-500" />;
   }
-
   // Check for JSON files
-  if (mimeType === "application/json" || fileName.endsWith(".json")) {
-    return <FileJson size={16} className="mr-2 text-green-500" />;
+  else if (mimeType === "application/json" || fileName.endsWith(".json")) {
+    icon = <FileJson size={16} className="mr-2 text-green-500" />;
   }
-
   // Check for markdown files
-  if (mimeType === "text/markdown" || fileName.endsWith(".md")) {
-    return <FileText size={16} className="mr-2 text-purple-500" />;
+  else if (mimeType === "text/markdown" || fileName.endsWith(".md")) {
+    icon = <FileText size={16} className="mr-2 text-purple-500" />;
+  }
+  // Default file icon
+  else {
+    icon = <FileText size={16} className="mr-2 text-gray-500" />;
   }
 
-  // Default file icon
-  return <FileText size={16} className="mr-2 text-gray-500" />;
+  // If it's a vector store file, wrap it with a tooltip
+  if (isVectorStoreFile) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="relative">
+              {icon}
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Vector Store File</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return icon;
 }
 
 export default function FilesPanel() {
@@ -155,7 +177,7 @@ export default function FilesPanel() {
                 }
               }}
               onContextMenu={(e) => handleContextMenu(e, item.id)}
-              title={item.name} // Add title for hover tooltip with full name
+              title={item.name}
             >
               {item.type === 'folder' ? (
                 <>
@@ -167,7 +189,7 @@ export default function FilesPanel() {
                 </>
               ) : (
                 <span className="ml-5 mr-1.5">
-                  {getFileIcon(item.name, item.mimeType)}
+                  {getFileIcon(item.name, item.mimeType, item.isVectorStoreFile)}
                 </span>
               )}
               <span className="truncate flex-1 max-w-[150px]">{item.name}</span>

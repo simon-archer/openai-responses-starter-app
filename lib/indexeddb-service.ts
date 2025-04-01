@@ -10,6 +10,7 @@ export interface IDBService {
   saveFile(file: FileItem): Promise<FileItem>;
   updateFile(file: FileItem): Promise<FileItem>;
   deleteFile(id: string): Promise<boolean>;
+  getFile(id: string): Promise<FileItem | null>;
 }
 
 // Check if code is running in browser environment
@@ -235,6 +236,41 @@ class IndexedDBService implements IDBService {
         };
       } catch (error) {
         console.error('Error in deleteFile:', error);
+        reject(error);
+      }
+    });
+  }
+
+  getFile(id: string): Promise<FileItem | null> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Return null if not in browser
+        if (!isBrowser) {
+          resolve(null);
+          return;
+        }
+
+        await this.initDB();
+        
+        if (!this.db) {
+          reject('Database not initialized');
+          return;
+        }
+
+        const transaction = this.db.transaction(STORE_NAME, 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(id);
+
+        request.onsuccess = () => {
+          resolve(request.result || null);
+        };
+
+        request.onerror = (event) => {
+          console.error('Error getting file:', event);
+          reject('Failed to get file');
+        };
+      } catch (error) {
+        console.error('Error in getFile:', error);
         reject(error);
       }
     });

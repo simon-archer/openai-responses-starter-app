@@ -89,113 +89,121 @@ function JsonViewer({ content }: { content: string }) {
   }
 }
 
-// Simple PDF Viewer that uses browser's built-in capabilities
+// Component for displaying PDFs
 function PdfViewer({ content }: { content: string }) {
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>("");
+  const [pdfObjectURL, setPdfObjectURL] = useState<string | null>(null);
 
-  // Convert content to URL that can be used by browser
   useEffect(() => {
-    // Clean up previous URL
-    if (pdfUrl) {
-      URL.revokeObjectURL(pdfUrl);
+    // Clean up previous object URL if it exists
+    if (pdfObjectURL) {
+      URL.revokeObjectURL(pdfObjectURL);
+      setPdfObjectURL(null);
+    }
+
+    if (!content) {
+      setError("No PDF content available");
+      setDebugInfo("Content is empty");
+      return;
     }
 
     try {
-      // If content is a base64 data URL
-      if (content.startsWith('data:application/pdf;base64,')) {
-        try {
-          const base64Data = content.split(',')[1];
-          if (!base64Data) {
-            throw new Error('Invalid PDF data URL');
-          }
+      let base64Data = content;
 
+      // If content includes the data URL prefix, extract just the base64 part
+      if (content.includes('base64,')) {
+        const base64Match = content.match(/base64,(.+)$/);
+        if (base64Match && base64Match[1]) {
+          base64Data = base64Match[1];
+        }
+      }
+      
+      // Check if the content looks like base64 (starts with common PDF base64 patterns)
+      if (base64Data.startsWith('JVBERi')) {
+        try {
           // Convert base64 to binary
           const binaryData = atob(base64Data);
-          const byteArray = new Uint8Array(binaryData.length);
+          const array = new Uint8Array(binaryData.length);
+          
+          // Fill the array with byte values
           for (let i = 0; i < binaryData.length; i++) {
-            byteArray[i] = binaryData.charCodeAt(i);
+            array[i] = binaryData.charCodeAt(i);
           }
-
+          
           // Create blob and object URL
-          const blob = new Blob([byteArray], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          setPdfUrl(url);
+          const blob = new Blob([array], { type: 'application/pdf' });
+          const objectURL = URL.createObjectURL(blob);
+          
+          // Set the object URL as the source
+          setPdfObjectURL(objectURL);
           setError(null);
+          setDebugInfo("Successfully created object URL from raw base64 PDF data");
+          return;
         } catch (e) {
-          console.error('Error processing PDF data:', e);
-          setError('Could not process PDF data');
+          console.error("Error converting base64 to blob:", e);
+          setDebugInfo(`Base64 conversion error: ${e instanceof Error ? e.message : String(e)}`);
         }
-      } 
-      // If content is already a URL
-      else if (content.startsWith('http')) {
-        setPdfUrl(content);
-        setError(null);
-      } 
-      // If content is raw PDF data
-      else {
-        try {
-          // Try to create a blob from raw data
-          const blob = new Blob([content], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          setPdfUrl(url);
-          setError(null);
-        } catch (e) {
-          console.error('Error creating PDF URL from raw data:', e);
-          setError('Could not create PDF from raw data');
-        }
+      } else {
+        setDebugInfo("Content doesn't appear to be base64-encoded PDF data");
+      }
+
+      // If we reached here, the content format wasn't recognized
+      setError("Unable to display PDF");
+      if (!debugInfo) {
+        setDebugInfo(`Content format not recognized. Content starts with: ${content.substring(0, 30)}...`);
       }
     } catch (e) {
-      console.error('PDF processing error:', e);
-      setError('Error processing PDF');
+      setError("Error processing PDF");
+      setDebugInfo(`Exception: ${e instanceof Error ? e.message : String(e)}`);
+      console.error("PDF processing error:", e);
     }
-
-    // Clean up when component unmounts
-    return () => {
-      if (pdfUrl && pdfUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(pdfUrl);
-      }
-    };
   }, [content]);
 
-  if (error) {
+  // Cleanup object URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (pdfObjectURL) {
+        URL.revokeObjectURL(pdfObjectURL);
+      }
+    };
+  }, [pdfObjectURL]);
+
+  // Show error state if we have an error or no content
+  if (error || !pdfObjectURL) {
     return (
-      <div className="p-4 text-red-500">
-        <p>{error}</p>
-        <p className="text-sm text-gray-500 mt-2">
-          The PDF data could not be processed. This may be due to an unsupported format or corrupt data.
-        </p>
+      <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
+        <FileText size={48} className="mb-4" />
+        <p className="text-red-500 font-medium mb-2">{error || "Failed to process PDF data"}</p>
+        {debugInfo && (
+          <div className="mt-4 p-3 bg-gray-100 text-xs font-mono max-w-md overflow-auto rounded">
+            <p className="mb-2 font-semibold">Debug information:</p>
+            <p className="whitespace-pre-wrap break-all">{debugInfo}</p>
+          </div>
+        )}
       </div>
     );
   }
-
-  if (!pdfUrl) {
-    return (
-      <div className="p-4">
-        <p>Loading PDF...</p>
-      </div>
-    );
-  }
-
+  
+  // Only render iframe when we have valid content
   return (
-    <div className="h-full w-full flex flex-col">
-      <object
-        data={pdfUrl}
-        type="application/pdf"
-        className="w-full h-full border-0"
-      >
-        <div className="w-full h-full flex flex-col items-center justify-center">
-          <p className="mb-4">Unable to display PDF directly.</p>
-          <a 
-            href={pdfUrl} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Open PDF in new tab
-          </a>
-        </div>
-      </object>
+    <div className="w-full h-full flex flex-col">
+      <div className="bg-gray-100 p-2">
+        <span className="text-sm font-medium">PDF Document</span>
+      </div>
+      <div className="flex-1 p-4 overflow-hidden">
+        <object
+          data={pdfObjectURL}
+          type="application/pdf"
+          className="w-full h-full"
+        >
+          <iframe 
+            src={pdfObjectURL} 
+            className="w-full h-full border-0"
+            title="PDF Viewer"
+          />
+        </object>
+      </div>
     </div>
   );
 }

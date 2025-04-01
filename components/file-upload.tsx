@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
+import { dbService } from "@/lib/indexeddb-service";
 
 interface FileUploadProps {
   vectorStoreId?: string;
@@ -98,27 +99,41 @@ export default function FileUpload({
     setUploading(true);
 
     let fileId = "";
-    let finalVectorStoreId = vectorStoreId; // Start with the potentially existing store ID
+    let finalVectorStoreId = vectorStoreId;
 
     try {
-      // --- Step 1: Upload the file ---
-      console.log("Step 1: Uploading file...");
+      // --- Step 0: Save file locally first ---
+      console.log("Step 0: Saving file locally...");
       const arrayBuffer = await file.arrayBuffer();
       const base64Content = arrayBufferToBase64(arrayBuffer);
-      const fileObject = {
+      
+      const localFile = {
+        id: crypto.randomUUID(),
         name: file.name,
-        content: base64Content, // Sending base64 content
+        type: "file" as const,
+        content: base64Content,
+        mimeType: file.type || getMimeTypeFromExtension(file.name),
+        parentId: null
       };
 
-      // Assume this endpoint uploads the file to OpenAI /files and returns { id: "file-xxx..." }
-      const uploadResponse = await fetch("/api/files/upload", { // <-- UPDATED ENDPOINT
+      await dbService.saveFile(localFile);
+      console.log("Step 0 Complete: File saved locally. Local ID:", localFile.id);
+
+      // --- Step 1: Upload the file to OpenAI ---
+      console.log("Step 1: Uploading file to OpenAI...");
+      const fileObject = {
+        name: file.name,
+        content: base64Content,
+      };
+
+      const uploadResponse = await fetch("/api/files/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileObject }),
       });
 
       if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json().catch(() => ({})); // Try to get error details
+        const errorData = await uploadResponse.json().catch(() => ({}));
         console.error("Upload failed:", uploadResponse.status, errorData);
         throw new Error(`Error uploading file: ${uploadResponse.statusText} ${JSON.stringify(errorData)}`);
       }
@@ -128,15 +143,13 @@ export default function FileUpload({
       if (!fileId) {
         throw new Error("File ID not received after upload.");
       }
-      console.log("Step 1 Complete: File Uploaded. File ID:", fileId);
-
+      console.log("Step 1 Complete: File Uploaded to OpenAI. File ID:", fileId);
 
       // --- Step 2: Ensure Vector Store Exists ---
       console.log("Step 2: Checking Vector Store...");
       if (!finalVectorStoreId || finalVectorStoreId === "") {
         console.log("No vector store linked, creating a new one...");
-        // Assume this endpoint creates a store via OpenAI /vector_stores and returns { id: "vs_yyy..." }
-        const createResponse = await fetch("/api/vector_stores/create_store", { // <-- SAME AS BEFORE (for creation)
+        const createResponse = await fetch("/api/vector_stores/create_store", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -154,56 +167,60 @@ export default function FileUpload({
           throw new Error("Vector Store ID not received after creation.");
         }
         console.log("Step 2 Complete: New Vector Store Created. Store ID:", finalVectorStoreId);
-        // Update the parent component's state immediately after creation
         onAddStore(finalVectorStoreId);
-      } else {
-        console.log("Step 2 Complete: Using existing Vector Store. Store ID:", finalVectorStoreId);
-        // If using an existing store ID passed via props, we might not need to call onAddStore again,
-        // unless the intention is to confirm/refresh the state. Let's assume it's not needed here.
       }
-
 
       // --- Step 3: Associate File with Vector Store ---
       console.log("Step 3: Associating file with vector store...");
       if (!finalVectorStoreId) {
-        // This should theoretically not happen due to checks above, but safeguard anyway.
         throw new Error("Cannot associate file, Vector Store ID is missing.");
       }
 
-      // Assume this endpoint associates the file via OpenAI /vector_stores/{vs_id}/files and returns the association object
-      const associateResponse = await fetch("/api/vector_stores/associate_file", { // <-- UPDATED ENDPOINT
+      const associateResponse = await fetch("/api/vector_stores/associate_file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fileId: fileId, // The ID from Step 1
-          vectorStoreId: finalVectorStoreId, // The ID from Step 2
+          fileId: fileId,
+          vectorStoreId: finalVectorStoreId,
         }),
       });
 
       if (!associateResponse.ok) {
-         const errorData = await associateResponse.json().catch(() => ({}));
-         console.error("Association failed:", associateResponse.status, errorData);
-        // Note: Even if association fails, the file is uploaded and the store might exist.
-        // Depending on desired behavior, you might want to attempt cleanup or just report the error.
+        const errorData = await associateResponse.json().catch(() => ({}));
+        console.error("Association failed:", associateResponse.status, errorData);
         throw new Error(`Error associating file with vector store: ${associateResponse.statusText} ${JSON.stringify(errorData)}`);
       }
 
-      const associationData = await associateResponse.json();
-      console.log("Step 3 Complete: File associated with vector store:", associationData);
+      // --- Step 4: Update local file with vector store info ---
+      console.log("Step 4: Updating local file with vector store info...");
+      const updatedLocalFile = {
+        ...localFile,
+        vectorStoreId: finalVectorStoreId,
+        vectorStoreFileId: fileId
+      };
+      await dbService.updateFile(updatedLocalFile);
+      console.log("Step 4 Complete: Local file updated with vector store info");
 
-      // --- Cleanup ---
-      setFile(null); // Clear the selected file
-      setDialogOpen(false); // Close the dialog
+      setFile(null);
+      setDialogOpen(false);
 
     } catch (error) {
       console.error("Error during file processing:", error);
-      // Provide more specific feedback if possible
-      const message = error instanceof Error ? error.message : "An unknown error occurred.";
-      alert(`There was an error processing your file: ${message}`);
-      // Decide if you want to clear the file on error or let the user retry
-      // setFile(null);
+      alert("Error processing file. Please try again.");
     } finally {
-      setUploading(false); // Ensure loading state is reset
+      setUploading(false);
+    }
+  };
+
+  // Helper to determine MIME type from file extension
+  const getMimeTypeFromExtension = (filename: string): string => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'pdf': return 'application/pdf';
+      case 'txt': return 'text/plain';
+      case 'md': return 'text/markdown';
+      case 'json': return 'application/json';
+      default: return 'text/plain';
     }
   };
 
