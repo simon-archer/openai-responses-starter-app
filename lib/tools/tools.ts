@@ -14,6 +14,14 @@ export const getTools = () => {
     webSearchConfig,
   } = useToolsStore.getState();
 
+  console.log("[getTools] Store state:", {
+    webSearchEnabled,
+    fileSearchEnabled,
+    functionsEnabled,
+    vectorStoreId: vectorStore?.id || 'none',
+    vectorStoreName: vectorStore?.name || 'none'
+  });
+
   const tools = [];
 
   if (webSearchEnabled) {
@@ -30,14 +38,24 @@ export const getTools = () => {
     }
 
     tools.push(webSearchTool);
+    console.log("[getTools] Added web search tool");
   }
 
   if (fileSearchEnabled) {
-    const fileSearchTool = {
-      type: "file_search",
-      vector_store_ids: [vectorStore?.id],
-    };
-    tools.push(fileSearchTool);
+    if (vectorStore && vectorStore.id && vectorStore.id.trim() !== "") {
+      const fileSearchTool = {
+        type: "file_search",
+        vector_store_ids: [vectorStore.id],
+      };
+      tools.push(fileSearchTool);
+      console.log(`[getTools] Added file search tool with vector store: ${vectorStore.id}`);
+    } else {
+      console.log("[getTools] File search enabled but no valid vector store ID found:", vectorStore);
+      // Option: Force disable file search if no valid vector store
+      // useToolsStore.setState({ fileSearchEnabled: false });
+    }
+  } else {
+    console.log("[getTools] File search not enabled");
   }
 
   if (functionsEnabled) {
@@ -57,9 +75,15 @@ export const getTools = () => {
         };
       })
     );
+    console.log(`[getTools] Added ${toolsList.length} function tools`);
   }
 
-  console.log("tools", tools);
+  console.log("[getTools] Final tools list:", tools.map(t => {
+    if (t.type === "function") {
+      return `function:${(t as any).name}`;
+    }
+    return t.type;
+  }));
 
   return tools;
 };

@@ -70,7 +70,6 @@ export const VectorStoreProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
 
     console.log("[VectorStoreContext] Syncing files with store:", storeId);
-    setIsLoading(true);
     try {
       // 1. Fetch vector store files
       const vectorFiles = await VectorStoreService.listFiles(storeId);
@@ -163,56 +162,54 @@ export const VectorStoreProvider: React.FC<{ children: ReactNode }> = ({ childre
       // Fallback: Load only local files
       const localFiles = await FileService.loadFileTree();
       setFiles(localFiles);
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
   // Function to set/change the vector store
   const setVectorStore = useCallback(async (storeId: string | null) => {
     if (storeId === currentVectorStoreId) {
-        console.log("[VectorStoreContext] Store ID hasn't changed.");
-        // Optionally trigger sync anyway if needed?
-        // await syncFilesWithStore(storeId);
+        console.log("[VectorStoreContext] Store ID hasn't changed. Skipping full set, use refresh maybe?");
+        // Avoid full reload if ID is same, maybe just trigger sync?
+        // await syncFiles(); // Or syncFilesWithStore(storeId);
         return;
     }
-
     setIsLoading(true);
     if (storeId) {
       try {
-        console.log("[VectorStoreContext] Retrieving vector store:", storeId);
+        console.log("[VectorStoreContext] Retrieving vector store details:", storeId);
         const store = await VectorStoreService.getStore(storeId);
         if (store && store.id) {
           setCurrentVectorStoreState(store);
           setCurrentVectorStoreId(store.id);
-          localStorage.setItem(LOCAL_STORAGE_KEY, store.id); // Save to localStorage
-          await syncFilesWithStore(store.id); // Sync files after setting store
-          toast.success("Connected to vector store!"); // Success toast
+          localStorage.setItem(LOCAL_STORAGE_KEY, store.id);
+          await syncFilesWithStore(store.id); // Sync files *after* setting store state
+          toast.success("Connected to vector store!");
         } else {
+          // Handle store not found
           console.warn("[VectorStoreContext] Vector store not found:", storeId);
           toast.error("Vector store not found.");
-          // Clear state if store not found
           setCurrentVectorStoreState(null);
           setCurrentVectorStoreId(null);
-          localStorage.removeItem(LOCAL_STORAGE_KEY); // Remove if not found
-          await syncFilesWithStore(null);
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          await syncFilesWithStore(null); // Clear file links
         }
       } catch (error) {
+        // Handle error fetching store
         console.error("[VectorStoreContext] Error setting vector store:", error);
         toast.error("Failed to connect to vector store.");
         setCurrentVectorStoreState(null);
         setCurrentVectorStoreId(null);
-        localStorage.removeItem(LOCAL_STORAGE_KEY); // Remove on error
-        await syncFilesWithStore(null); // Clear files on error
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        await syncFilesWithStore(null); // Clear file links
       } finally {
-        // setIsLoading(false); // Loading state handled within sync
+        setIsLoading(false); // Set loading false after all operations
       }
     } else {
       // Clear the store
       console.log("[VectorStoreContext] Clearing vector store.");
       setCurrentVectorStoreState(null);
       setCurrentVectorStoreId(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY); // Remove from localStorage
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
       await syncFilesWithStore(null); // Sync (which will clear links)
       setIsLoading(false); // Set loading false after clearing
     }
@@ -236,29 +233,60 @@ export const VectorStoreProvider: React.FC<{ children: ReactNode }> = ({ childre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // No dependencies needed here for initial load
 
-  // Exposed sync function (useful for manual refresh button)
+  // Exposed sync function (MODIFIED for refresh)
   const syncFiles = useCallback(async () => {
       if (!currentVectorStoreId) {
          toast.error("No vector store connected.");
          return;
       }
-      toast.loading("Syncing files...", { id: 'sync-toast' });
-      await syncFilesWithStore(currentVectorStoreId);
-      toast.success("Files synced!", { id: 'sync-toast' });
+      console.log("[VectorStoreContext] Manual sync/refresh triggered for store:", currentVectorStoreId);
+      setIsLoading(true);
+      const toastId = toast.loading("Refreshing vector store info...");
+      try {
+          // 1. Re-fetch store details
+          console.log("[VectorStoreContext] Refreshing store details...");
+          const storeDetails = await VectorStoreService.getStore(currentVectorStoreId);
+          if (storeDetails && storeDetails.id) {
+              setCurrentVectorStoreState(storeDetails); // Update the store details state
+              console.log("[VectorStoreContext] Store details updated.");
+              
+              // 2. Sync files (as before)
+              toast.loading("Syncing file list...", { id: toastId });
+              await syncFilesWithStore(currentVectorStoreId);
+              
+              toast.success("Vector store refreshed!", { id: toastId });
+          } else {
+              // Handle case where the store might have been deleted externally
+              console.warn("[VectorStoreContext] Store not found during refresh:", currentVectorStoreId);
+              toast.error("Vector store not found during refresh. Unlinking...", { id: toastId });
+              // Clear the store state as it's no longer valid
+              setCurrentVectorStoreState(null);
+              setCurrentVectorStoreId(null);
+              localStorage.removeItem(LOCAL_STORAGE_KEY);
+              await syncFilesWithStore(null); // Clear file links
+          }
+      } catch (error) {
+          console.error("[VectorStoreContext] Error during manual sync/refresh:", error);
+          toast.error("Failed to refresh vector store info.", { id: toastId });
+          // Don't clear the store on error necessarily, maybe it was a temp network issue?
+          // Or potentially add specific error handling, e.g., if 404 clear the store.
+      } finally {
+          setIsLoading(false);
+      }
   }, [currentVectorStoreId, syncFilesWithStore]);
 
   // Context value
-  const contextValue: VectorStoreContextType = {
+  const value = {
     currentVectorStore,
     currentVectorStoreId,
     files,
     isLoading,
     setVectorStore,
-    syncFiles,
+    syncFiles, // Provide the updated syncFiles
   };
 
   return (
-    <VectorStoreContext.Provider value={contextValue}>
+    <VectorStoreContext.Provider value={value}>
       {children}
     </VectorStoreContext.Provider>
   );

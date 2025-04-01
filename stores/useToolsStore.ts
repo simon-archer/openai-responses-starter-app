@@ -36,6 +36,7 @@ interface StoreState {
   setVectorStore: (store: VectorStore) => void;
   webSearchConfig: WebSearchConfig;
   setWebSearchConfig: (config: WebSearchConfig) => void;
+  resetStore: () => void;
 }
 
 const useToolsStore = create<StoreState>()(
@@ -66,6 +67,26 @@ const useToolsStore = create<StoreState>()(
       },
       setVectorStore: (store) => set({ vectorStore: store }),
       setWebSearchConfig: (config) => set({ webSearchConfig: config }),
+      resetStore: () => {
+        set({
+          fileSearchEnabled: false,
+          webSearchEnabled: false,
+          functionsEnabled: true,
+          vectorStore: defaultVectorStore.id !== "" ? defaultVectorStore : null,
+          webSearchConfig: {
+            user_location: {
+              type: "approximate",
+              country: "",
+              city: "",
+              region: "",
+            },
+          }
+        });
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('tools-store'); 
+          console.log("[ToolsStore] Store reset and localStorage cleared");
+        }
+      }
     }),
     {
       name: "tools-store",

@@ -425,7 +425,7 @@ export default function FilesPanel() {
           {showSettings ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         {showSettings && (
-          <div className="pt-2 pb-1 pl-1 pr-1 border-t border-gray-100 dark:border-gray-700 mt-2">
+          <div className="p-1 border-t border-gray-100 dark:border-gray-700 mt-2">
             <FileSearchSetup />
           </div>
         )}

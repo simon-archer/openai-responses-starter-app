@@ -267,7 +267,7 @@ export default function FileUpload({
             ) : (
               <div className="flex items-center justify-between flex-1 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="text-sm font-medium w-24 text-nowrap">
+                  <div className="text-sm font-medium text-nowrap">
                     Vector store
                   </div>
                   <div className="text-zinc-400  text-xs font-mono flex-1 text-ellipsis truncate">

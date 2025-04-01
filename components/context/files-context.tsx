@@ -85,25 +85,33 @@ export const FilesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [currentVectorStoreIdLocal, setCurrentVectorStoreIdLocal] = useState<string | null>(null);
   
-  // Get state from VectorStoreContext - Assuming 'files' and 'currentVectorStoreId' will exist there
-  const { files: vectorStoreFiles, currentVectorStoreId: vectorStoreIdFromContext } = useVectorStore();
+  // Get state and sync function from VectorStoreContext
+  const {
+    files: vectorStoreFiles,
+    currentVectorStoreId: vectorStoreIdFromContext,
+    syncFiles: syncVectorStoreFiles, // Get the sync function
+    isLoading: isVectorStoreLoading // Get loading state from vector store context
+  } = useVectorStore();
 
   // Update main file list when VectorStoreContext changes
   useEffect(() => {
     console.log("[FilesContext] Received updated files from VectorStoreContext:", vectorStoreFiles);
-    if (vectorStoreFiles) { // Check if files exist
+    if (vectorStoreFiles) {
       const filesWithPaths = vectorStoreFiles.map((f: FileItem) => ({ ...f, path: f.path || f.name }));
       setFilesState(filesWithPaths);
-      setIsLoading(false); // Stop loading once files are received
+      // Don't set isLoading false here, rely on isVectorStoreLoading
     }
   }, [vectorStoreFiles]);
   
   // Update local tracking of vector store ID
   useEffect(() => {
-     if (vectorStoreIdFromContext !== undefined) { // Check if the context value exists
+     if (vectorStoreIdFromContext !== undefined) {
        setCurrentVectorStoreIdLocal(vectorStoreIdFromContext);
      }
   }, [vectorStoreIdFromContext]);
+
+  // Pass through the loading state from VectorStoreContext
+  const effectiveIsLoading = isLoading || isVectorStoreLoading;
 
   // Function to set files (used internally or potentially by VSContext)
   const setFiles = (newFiles: FileItem[]) => {
@@ -192,24 +200,37 @@ export const FilesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
   };
 
-  // Function to upload a file (saves locally, does not link to VS)
+  // Function to upload a file (saves locally, then triggers sync)
   const uploadFile = async (file: File): Promise<FileItem | undefined> => {
-    setIsLoading(true);
+    // Use the effective loading state to prevent uploads during sync
+    if (effectiveIsLoading) {
+        toast.error("Please wait for current operations to complete.");
+        return undefined;
+    }
+    
+    setIsLoading(true); // Set local loading true for the upload itself
+    let newFile: FileItem | undefined;
     try {
-      const newFile = await FileService.createFileFromUpload(file);
-      // Ensure path exists - FileService should handle this now
-      const fileWithPath = { ...newFile, path: newFile.path || newFile.name }; 
-      // Update local state immediately
-      // Note: This state update might be overwritten when VectorStoreContext syncs
-      setFilesState(prevFiles => [...prevFiles, fileWithPath]); 
-      toast.success(`${file.name} uploaded locally.`);
-      return fileWithPath;
+      console.log(`[FilesContext] Starting upload for: ${file.name}`);
+      newFile = await FileService.createFileFromUpload(file);
+      console.log(`[FilesContext] FileService created local file:`, newFile);
+      toast.success(`${file.name} saved locally. Syncing...`);
+      
+      // --- Trigger sync from VectorStoreContext --- 
+      // This will re-fetch the combined file list including the new one
+      // and update the state via the useEffect hook above.
+      await syncVectorStoreFiles(); 
+      // -------------------------------------------
+
+      console.log(`[FilesContext] Sync triggered after upload for: ${file.name}`);
+      return newFile; // Return the file data created by FileService
+
     } catch (error) {
-      console.error("Error uploading file locally:", error);
-      toast.error(`Failed to upload ${file.name} locally.`);
+      console.error("[FilesContext] Error uploading file:", error);
+      toast.error(`Failed to upload ${file.name}.`);
       return undefined;
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Set local loading false
     }
   };
 
@@ -283,12 +304,33 @@ export const FilesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
   
-  // Load local files on initial mount
+  // Initial load logic (might need adjustment if VSContext handles initial load)
   useEffect(() => {
-    FileService.initDB().then(() => {
-        loadFiles();
-    });
-  }, []);
+    // If VectorStoreContext handles the initial load including local files,
+    // this might become redundant or only handle the case where no VS ID is stored.
+    console.log("[FilesContext] Initial load effect running.");
+    // Let VectorStoreContext handle the initial loading spinner and file fetching.
+
+    // Load tabs from localStorage
+    if (isBrowser) {
+        const savedTabs = localStorage.getItem('openTabs');
+        const savedActiveTab = localStorage.getItem('activeTabId');
+        if (savedTabs) {
+            try {
+                setOpenTabs(JSON.parse(savedTabs));
+            } catch (e) {
+                console.error("Failed to parse saved tabs:", e);
+                localStorage.removeItem('openTabs');
+            }
+        }
+        if (savedActiveTab) {
+            setActiveTabId(savedActiveTab);
+        }
+    }
+
+    // Files are loaded via useEffect listening to vectorStoreFiles
+
+  }, []); // Runs once on mount
 
   // Function to create a new folder (local only)
   const createFolder = async (name: string, parentId: string | null = null) => {
@@ -340,12 +382,12 @@ export const FilesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const contextValue: FilesContextType = {
     files,
     expandedFolders,
-    isLoading,
+    isLoading: effectiveIsLoading, // Use the combined loading state
     selectedFileId,
     openTabs,
     activeTabId,
-    currentVectorStoreId: currentVectorStoreIdLocal, // Use the local state
-    setFiles, // Expose setFiles for potential direct updates if needed
+    currentVectorStoreId: currentVectorStoreIdLocal,
+    setFiles,
     toggleFolder,
     selectFile,
     openFileInTab,
@@ -354,7 +396,11 @@ export const FilesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addFile,
     uploadFile,
     deleteFile,
-    loadFiles, // Keep for initial load
+    loadFiles: async () => {
+        // Make loadFiles also trigger the vector store sync for consistency
+        console.log("[FilesContext] loadFiles called, triggering VectorStore sync.");
+        await syncVectorStoreFiles();
+    },
     findFileById,
     createFolder,
   };
