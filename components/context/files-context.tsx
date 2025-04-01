@@ -102,6 +102,22 @@ const buildFileTree = (files: FileItem[]): FileItem[] => {
   return rootItems;
 };
 
+// Helper function to update a file in the tree
+const updateFileTree = (files: FileItem[], fileId: string, updater: (file: FileItem) => FileItem): FileItem[] => {
+  return files.map(file => {
+    if (file.id === fileId) {
+      return updater(file);
+    }
+    if (file.type === 'folder' && file.children) {
+      return {
+        ...file,
+        children: updateFileTree(file.children, fileId, updater)
+      };
+    }
+    return file;
+  });
+};
+
 export const FilesProvider = ({ children }: { children: ReactNode }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -137,9 +153,27 @@ export const FilesProvider = ({ children }: { children: ReactNode }) => {
       if (data && Array.isArray(data) && data.length > 0) {
         // Update local files with vector store info if needed
         for (const vectorFile of data) {
-          const matchingLocalFile = localFiles.find(
-            localFile => localFile.name === vectorFile.name
+          // Try to find a matching local file:
+          // 1. First by existing vectorStoreFileId
+          // 2. Then by exact name match
+          // 3. Finally by name without extension
+          let matchingLocalFile = localFiles.find(
+            localFile => localFile.vectorStoreFileId === vectorFile.id
           );
+
+          if (!matchingLocalFile) {
+            matchingLocalFile = localFiles.find(
+              localFile => localFile.name === vectorFile.name
+            );
+          }
+
+          if (!matchingLocalFile) {
+            // Try matching without extension
+            const vectorFileName = vectorFile.name.replace(/\.[^/.]+$/, "");
+            matchingLocalFile = localFiles.find(
+              localFile => localFile.name.replace(/\.[^/.]+$/, "") === vectorFileName
+            );
+          }
 
           if (matchingLocalFile) {
             // Update existing local file with vector store info

@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import useToolsStore from "@/stores/useToolsStore";
-import FileUpload from "@/components/file-upload";
 import { Input } from "./ui/input";
 import { CircleX } from "lucide-react";
 import { TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -169,7 +168,7 @@ export default function FileSearchSetup() {
   return (
     <div>
       <div className="text-sm text-zinc-500">
-        Upload a file to create a new vector store, or use an existing one.
+        Enter a vector store ID to use an existing one.
       </div>
       <div className="flex items-center gap-2 mt-2 h-10">
         <div className="flex items-center gap-2 w-full">
@@ -221,14 +220,6 @@ export default function FileSearchSetup() {
             </div>
           )}
         </div>
-      </div>
-      <div className="flex mt-4">
-        <FileUpload
-          vectorStoreId={vectorStore?.id}
-          vectorStoreName={vectorStore?.name}
-          onAddStore={(id) => handleAddStore(id)}
-          onUnlinkStore={unlinkStore}
-        />
       </div>
     </div>
   );
