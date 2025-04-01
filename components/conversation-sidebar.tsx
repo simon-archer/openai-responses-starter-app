@@ -13,7 +13,7 @@ export default function ConversationSidebar() {
 
   return (
     <div className="h-full w-full bg-white flex flex-col">
-      <div className="flex-1 overflow-y-auto p-3 h-full">
+      <div className="flex-1 overflow-y-auto p-2 h-full">
         {isLoading ? (
           <div className="flex justify-center items-center h-20">
             <p className="text-sm text-gray-500">Loading...</p>

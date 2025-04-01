@@ -9,8 +9,8 @@ import VectorStoreService from "@/services/vector-store-service";
 import { useVectorStore } from "./context/vector-store-context";
 import { toast } from "react-hot-toast";
 
-// Get file icon based on file type/extension
-function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
+// Get file icon based on file type/extension, now accepts processingFileId
+function getFileIcon(fileName: string, mimeType?: string, file?: FileItem, processingFileId?: string | null) {
   let icon;
   
   // Check for Word files
@@ -44,18 +44,25 @@ function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
     const isLinked = !!file.vectorStoreFileId;
     const isPlaceholder = file.isPlaceholder;
     
-    let statusIcon;
-    let tooltipText;
+    let statusIcon = null;
+    let tooltipText = null;
     
-    if (isLinked && isPlaceholder) {
-      statusIcon = <Cloud size={16} className="text-amber-500 mr-2" />;
-      tooltipText = "Remote file (needs local content)";
-    } else if (isLinked) {
-      statusIcon = <Link2 size={16} className="text-blue-500 mr-2" />;
-      tooltipText = "Linked to Vector Store";
+    // Check if this specific file is being processed
+    if (file.id === processingFileId) {
+        statusIcon = <Loader2 size={16} className="animate-spin text-gray-500 mr-2" />;
+        tooltipText = "Processing...";
     } else {
-      statusIcon = <CloudOff size={16} className="text-gray-400 mr-2" />;
-      tooltipText = "Local File Only";
+        // Determine status icon based on state if not processing
+        if (isLinked && isPlaceholder) {
+          statusIcon = <Cloud size={16} className="text-amber-500 mr-2" />;
+          tooltipText = "Remote file (needs local content)";
+        } else if (isLinked) {
+          statusIcon = <Link2 size={16} className="text-blue-500 mr-2" />;
+          tooltipText = "Linked to Vector Store";
+        } else {
+          statusIcon = <CloudOff size={16} className="text-gray-400 mr-2" />;
+          tooltipText = "Local File Only";
+        }
     }
 
     return (
@@ -67,9 +74,11 @@ function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
               {icon}
             </div>
           </TooltipTrigger>
-          <TooltipContent>
-            <p>{tooltipText}</p>
-          </TooltipContent>
+          {tooltipText && (
+              <TooltipContent>
+                <p>{tooltipText}</p>
+              </TooltipContent>
+          )}
         </Tooltip>
       </TooltipProvider>
     );
@@ -99,7 +108,7 @@ export default function FilesPanel() {
     loadFiles: loadLocalFiles 
   } = useFiles();
   
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingFileId, setProcessingFileId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     show: boolean;
     x: number;
@@ -168,7 +177,7 @@ export default function FilesPanel() {
 
     if (!confirm(message)) return;
 
-    setIsProcessing(true);
+    setProcessingFileId(fileId);
     try {
       let remoteDeletePromise = Promise.resolve();
       let localDeletePromise = Promise.resolve();
@@ -211,7 +220,7 @@ export default function FilesPanel() {
       console.error("[FilesPanel] Unexpected error during delete orchestration:", error);
       toast.error("An unexpected error occurred during file deletion.");
     } finally {
-      setIsProcessing(false);
+      setProcessingFileId(null);
     }
   };
 
@@ -238,7 +247,7 @@ export default function FilesPanel() {
         return;
     }
 
-    setIsProcessing(true);
+    setProcessingFileId(fileId);
     try {
       if (isLinked) {
         await VectorStoreService.unlinkFile(file); 
@@ -255,7 +264,7 @@ export default function FilesPanel() {
       console.error(`[FilesPanel] Error ${action.toLowerCase()}ing file:`, error);
       toast.error(`Failed to ${action.toLowerCase()} file '${file.name}'.`);
     } finally {
-      setIsProcessing(false);
+      setProcessingFileId(null);
     }
   };
   
@@ -271,7 +280,7 @@ export default function FilesPanel() {
     input.addEventListener("change", async (e) => {
       const target = e.target as HTMLInputElement;
       if (target.files && target.files.length > 0) {
-        setIsProcessing(true);
+        setProcessingFileId(placeholderFile.id);
         const uploadedFile = target.files[0];
         console.log(`[FilesPanel] Uploading local copy for placeholder: ${placeholderFile.name}, New file: ${uploadedFile.name}`);
         
@@ -307,7 +316,7 @@ export default function FilesPanel() {
           console.error("[FilesPanel] Error uploading local copy:", error);
           toast.error(`Failed to upload local copy for ${placeholderFile.name}.`);
         } finally {
-          setIsProcessing(false);
+          setProcessingFileId(null);
           document.body.removeChild(input);
         }
       } else {
@@ -350,11 +359,6 @@ export default function FilesPanel() {
               onContextMenu={(e) => handleContextMenu(e, item.id)}
               title={item.name}
             >
-              {isProcessing && contextMenu.fileId === item.id && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-gray-800/50 z-10 rounded-md">
-                      <Loader2 size={16} className="animate-spin text-gray-500 dark:text-gray-400" />
-                  </div>
-              )}
               <div className="flex items-center min-w-0 flex-1">
                 {item.type === 'folder' ? (
                   <>
@@ -366,7 +370,7 @@ export default function FilesPanel() {
                   </>
                 ) : (
                   <span className="flex-shrink-0 flex items-center mr-1.5">
-                    {getFileIcon(item.name, item.mimeType, item)}
+                    {getFileIcon(item.name, item.mimeType, item, processingFileId)}
                   </span>
                 )}
                 <span className="truncate">{item.name}</span>
@@ -451,6 +455,7 @@ export default function FilesPanel() {
               const isPlaceholder = currentFile.isPlaceholder;
               const isLinked = !!currentFile.vectorStoreFileId;
               const isStoreAvailable = !!currentVectorStoreId;
+              const itemIsProcessing = processingFileId === currentFile.id;
 
               return (
                 <>
@@ -458,9 +463,9 @@ export default function FilesPanel() {
                     <button
                       className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleUploadLocalCopy(currentFile)}
-                      disabled={isProcessing}
+                      disabled={!!processingFileId}
                     >
-                      {isProcessing ? 
+                      {itemIsProcessing ? 
                         <Loader2 size={14} className="mr-2 animate-spin" /> : 
                         <Download size={14} className="mr-2" />
                       }
@@ -472,10 +477,10 @@ export default function FilesPanel() {
                     <button
                       className={`w-full text-left px-3 py-1.5 text-sm flex items-center ${isStoreAvailable || isLinked ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : 'text-gray-400 cursor-not-allowed'} disabled:opacity-50 disabled:cursor-not-allowed`}
                       onClick={() => handleToggleVectorStore(currentFile.id)}
-                      disabled={(!isStoreAvailable && !isLinked) || isProcessing}
+                      disabled={(!isStoreAvailable && !isLinked) || !!processingFileId}
                       title={!isStoreAvailable && !isLinked ? "Connect to vector store to link files." : (isLinked ? "Unlink file from vector store" : "Link file to vector store")}
                     >
-                      {isProcessing && contextMenu.fileId === currentFile.id ? (
+                      {itemIsProcessing ? (
                           <Loader2 size={14} className="mr-2 animate-spin" />
                       ) : isLinked ? (
                           <CloudOff size={14} className="mr-2" />
@@ -489,9 +494,9 @@ export default function FilesPanel() {
                   <button
                     className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => handleDeleteFile(currentFile.id)}
-                    disabled={isProcessing}
+                    disabled={!!processingFileId}
                   >
-                     {isProcessing ? 
+                     {itemIsProcessing ? 
                         <Loader2 size={14} className="mr-2 animate-spin" /> : 
                         <Trash2 size={14} className="mr-2" />
                       }
