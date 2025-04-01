@@ -71,11 +71,11 @@ const AnnotationPill = ({ annotation }: { annotation: Annotation }) => {
       return (
         <button 
           onClick={handleFileClick}
-          className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-1.5 py-0.5 transition-colors"
+          className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded px-1.5 py-0.5 transition-colors max-w-[200px] group"
           title={`Open ${annotation.filename || 'file'}`}
         >
           <FileText size={10} className="mr-1 flex-shrink-0" />
-          <span className="truncate">{annotation.filename || 'Unnamed file'}</span>
+          <span className="truncate group-hover:text-clip">{annotation.filename || 'Unnamed file'}</span>
         </button>
       );
     case "url_citation":
@@ -117,7 +117,7 @@ const Annotations = ({ annotations }: { annotations: Annotation[] }) => {
   }
 
   return (
-    <div className="flex flex-wrap ml-0.5 gap-x-3 text-gray-400 text-[10px] mt-1">
+    <div className="flex flex-wrap gap-2 ml-0.5 text-gray-400 text-[10px] mt-1">
       {uniqueAnnotations.map((annotation: Annotation, index: number) => (
         <AnnotationPill key={index} annotation={annotation} />
       ))}
