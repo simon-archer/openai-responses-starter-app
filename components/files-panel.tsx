@@ -164,7 +164,7 @@ export default function FilesPanel() {
           <li key={item.id}>
             <div 
               className={`
-                flex items-center py-1 px-2 rounded-md text-sm group
+                flex items-center py-1 px-2 rounded-md text-sm group w-full
                 ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100' : 'cursor-pointer hover:bg-gray-100'}
                 ${item.type === 'file' && item.id === selectedFileId ? 'bg-gray-100 font-medium' : ''}
               `}
@@ -179,24 +179,26 @@ export default function FilesPanel() {
               onContextMenu={(e) => handleContextMenu(e, item.id)}
               title={item.name}
             >
-              {item.type === 'folder' ? (
-                <>
-                  {expandedFolders[item.id] ? 
-                    <ChevronDown size={16} className="mr-1.5" /> : 
-                    <ChevronRight size={16} className="mr-1.5" />
-                  }
-                  <Folder size={16} className="mr-1.5 text-blue-500" />
-                </>
-              ) : (
-                <span className="ml-5 mr-1.5">
-                  {getFileIcon(item.name, item.mimeType, item.isVectorStoreFile)}
-                </span>
-              )}
-              <span className="truncate flex-1 max-w-[150px]">{item.name}</span>
+              <div className="flex items-center min-w-0 flex-1">
+                {item.type === 'folder' ? (
+                  <>
+                    {expandedFolders[item.id] ? 
+                      <ChevronDown size={16} className="mr-1.5 flex-shrink-0" /> : 
+                      <ChevronRight size={16} className="mr-1.5 flex-shrink-0" />
+                    }
+                    <Folder size={16} className="mr-1.5 flex-shrink-0 text-blue-500" />
+                  </>
+                ) : (
+                  <span className="ml-5 mr-1.5 flex-shrink-0">
+                    {getFileIcon(item.name, item.mimeType, item.isVectorStoreFile)}
+                  </span>
+                )}
+                <span className="truncate">{item.name}</span>
+              </div>
               
               {/* File actions button */}
               <button 
-                className="ml-1 p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full transition-opacity"
+                className="ml-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full transition-opacity flex-shrink-0"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
