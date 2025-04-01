@@ -4,6 +4,7 @@ import "./globals.css";
 import { FilesProvider } from "@/components/context/files-context";
 import { ToolsProvider } from "@/components/context/tools-context";
 import { ConversationsProvider } from "@/components/context/conversations-context";
+import VectorStoreProvider from "@/components/context/vector-store-context";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -34,15 +35,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <FilesProvider>
-          <ToolsProvider>
-            <ConversationsProvider>
-              <div className="flex h-screen bg-gray-200 w-full flex-col text-stone-900">
-                <main>{children}</main>
-              </div>
-            </ConversationsProvider>
-          </ToolsProvider>
-        </FilesProvider>
+        <VectorStoreProvider>
+          <FilesProvider>
+            <ToolsProvider>
+              <ConversationsProvider>
+                <div className="flex h-screen bg-gray-200 w-full flex-col text-stone-900">
+                  <main>{children}</main>
+                </div>
+              </ConversationsProvider>
+            </ToolsProvider>
+          </FilesProvider>
+        </VectorStoreProvider>
       </body>
     </html>
   );

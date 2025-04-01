@@ -1,11 +1,15 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal, Link2, CloudOff } from "lucide-react";
+import { Folder, ChevronRight, ChevronDown, FileText, MoreVertical, Trash2, FileCode, FileJson, Settings, SlidersHorizontal, Link2, CloudOff, Cloud, Download, Loader2 } from "lucide-react";
 import { useFiles, FileItem } from "./context/files-context";
 import { useTools } from "./context/tools-context";
 import FileSearchSetup from "./file-search-setup";
 import PanelConfig from "./panel-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import FileService, { arrayBufferToBase64 as arrayBufferToBase64Util, getMimeTypeFromExtension } from "@/services/file-service";
+import VectorStoreService from "@/services/vector-store-service";
+import { useVectorStore } from "./context/vector-store-context";
+import { toast } from "react-hot-toast";
 
 // Get file icon based on file type/extension
 function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
@@ -40,13 +44,21 @@ function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
   // If we have file status info, wrap it with a tooltip
   if (file) {
     const isLinked = !!file.vectorStoreFileId;
-    const statusIcon = isLinked ? (
-      <Link2 size={16} className="text-blue-500 mr-2" />
-    ) : (
-      <CloudOff size={16} className="text-gray-400 mr-2" />
-    );
+    const isPlaceholder = file.isPlaceholder;
     
-    const tooltipText = isLinked ? "Linked to Vector Store" : "Local File Only";
+    let statusIcon;
+    let tooltipText;
+    
+    if (isLinked && isPlaceholder) {
+      statusIcon = <Cloud size={16} className="text-amber-500 mr-2" />;
+      tooltipText = "Remote file (needs local content)";
+    } else if (isLinked) {
+      statusIcon = <Link2 size={16} className="text-blue-500 mr-2" />;
+      tooltipText = "Linked to Vector Store";
+    } else {
+      statusIcon = <CloudOff size={16} className="text-gray-400 mr-2" />;
+      tooltipText = "Local File Only";
+    }
 
     return (
       <TooltipProvider>
@@ -70,22 +82,28 @@ function getFileIcon(fileName: string, mimeType?: string, file?: FileItem) {
 
 export default function FilesPanel() {
   const { 
-    files, 
+    files: combinedFiles, 
+    isLoading: isSyncing, 
+    currentVectorStoreId, 
+    syncFiles 
+  } = useVectorStore();
+  
+  const { 
     expandedFolders, 
-    isLoading, 
     toggleFolder, 
     selectFile, 
     selectedFileId,
     openFileInTab,
-    deleteFile,
-    setFiles,
-    currentVectorStoreId,
-    linkFileToVectorStore,
-    unlinkFileFromVectorStore
+    setFiles: setLocalFilesState,
+    openTabs,
+    closeTab,
+    findFileById,
+    loadFiles: loadLocalFiles 
   } = useFiles();
   
   const { fileSearchEnabled, setFileSearchEnabled } = useTools();
-
+  
+  const [isProcessing, setIsProcessing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     show: boolean;
     x: number;
@@ -97,131 +115,235 @@ export default function FilesPanel() {
     y: 0,
     fileId: ""
   });
-
   const [showSettings, setShowSettings] = useState(false);
 
-  // Ref for detecting clicks outside the context menu
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close context menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
         setContextMenu(prev => ({ ...prev, show: false }));
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Also close context menu when scrolling or window resizing
   useEffect(() => {
-    const handleScroll = () => {
+    const handleInteraction = () => {
       if (contextMenu.show) {
         setContextMenu(prev => ({ ...prev, show: false }));
       }
     };
-    
-    const handleResize = () => {
-      if (contextMenu.show) {
-        setContextMenu(prev => ({ ...prev, show: false }));
-      }
-    };
-
-    document.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("resize", handleResize);
-    
+    document.addEventListener("scroll", handleInteraction, true);
+    window.addEventListener("resize", handleInteraction);
     return () => {
-      document.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("scroll", handleInteraction, true);
+      window.removeEventListener("resize", handleInteraction);
     };
   }, [contextMenu.show]);
 
-  // Handle right-click on file/folder
   const handleContextMenu = (e: React.MouseEvent, fileId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Adjust menu position to ensure it stays within viewport
     const x = Math.min(e.clientX, window.innerWidth - 150);
     const y = Math.min(e.clientY, window.innerHeight - 100);
-    
-    setContextMenu({
-      show: true,
-      x,
-      y,
-      fileId
-    });
+    setContextMenu({ show: true, x, y, fileId });
   };
 
-  // Handle file delete with confirmation and error handling
-  const handleDeleteFile = async (fileId: string) => {
-    const file = files.find(f => f.id === fileId);
-    if (!file) return;
-
-    const message = file.vectorStoreFileId 
-      ? "This will delete the file both locally and from the vector store. Are you sure?"
-      : "Are you sure you want to delete this file?";
-
-    if (confirm(message)) {
-      try {
-        await deleteFile(fileId);
-      } catch (error) {
-        console.error("Error deleting file:", error);
-        alert("Failed to delete file");
-      }
-    }
+  const closeContextMenu = () => {
     setContextMenu(prev => ({ ...prev, show: false }));
-  };
+  }
 
-  // Handle linking/unlinking file to/from vector store
-  const handleToggleVectorStore = async (fileId: string) => {
-    const file = files.find(f => f.id === fileId);
+  const handleDeleteFile = async (fileId: string) => {
+    closeContextMenu();
+    const file = findFileById(fileId, combinedFiles);
     if (!file) return;
 
-    console.log("[FilesPanel] Attempting to toggle vector store for file:", file);
-    console.log("[FilesPanel] Current vector store ID:", currentVectorStoreId);
-    console.log("[FilesPanel] File search enabled:", fileSearchEnabled);
+    const isPlaceholder = file.isPlaceholder;
+    const isLinked = !!file.vectorStoreFileId;
+    let message = "Are you sure you want to delete this file?";
 
+    if (isPlaceholder) {
+        message = "This will delete the remote file from the vector store. Are you sure?";
+    } else if (isLinked) {
+        message = "This will delete the file locally AND from the vector store. Are you sure?";
+    }
+
+    if (!confirm(message)) return;
+
+    setIsProcessing(true);
     try {
-      if (file.vectorStoreFileId) {
-        // Unlink from vector store
-        if (confirm("Are you sure you want to unlink this file from the vector store?")) {
-          await unlinkFileFromVectorStore(fileId);
+      let remoteDeletePromise = Promise.resolve();
+      let localDeletePromise = Promise.resolve();
+
+      if (isLinked && file.vectorStoreFileId) {
+        console.log(`[FilesPanel] Deleting remote file ${file.vectorStoreFileId} for ${file.name}`);
+        remoteDeletePromise = VectorStoreService.deleteFile(file.vectorStoreFileId)
+          .then(() => console.log(`[FilesPanel] Remote file ${file.vectorStoreFileId} deleted.`))
+          .catch(err => {
+            console.error(`[FilesPanel] Error deleting remote file ${file.vectorStoreFileId}:`, err);
+            toast.error(`Failed to delete remote file ${file.name}. It may still exist.`);
+          });
+      }
+      
+      if (!isPlaceholder) {
+         console.log(`[FilesPanel] Deleting local file ${file.id} for ${file.name}`);
+         localDeletePromise = FileService.deleteFile(file.id)
+            .then(() => console.log(`[FilesPanel] Local file ${file.id} deleted.`))
+            .catch(err => {
+                 console.error(`[FilesPanel] Error deleting local file ${file.id}:`, err);
+                 toast.error(`Failed to delete local file ${file.name}.`);
+             });
+      }
+
+      await Promise.all([remoteDeletePromise, localDeletePromise]);
+
+      const tabWithFile = openTabs.find(tab => tab.fileId === fileId);
+      if (tabWithFile) {
+        closeTab(tabWithFile.id);
+      }
+      if (selectedFileId === fileId) {
+        selectFile("");
+      }
+
+      console.log("[FilesPanel] Triggering sync after delete operation.");
+      await syncFiles();
+      toast.success(`File ${file.name} deleted.`);
+
+    } catch (error) {
+      console.error("[FilesPanel] Unexpected error during delete orchestration:", error);
+      toast.error("An unexpected error occurred during file deletion.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleToggleVectorStore = async (fileId: string) => {
+    closeContextMenu();
+    const file = findFileById(fileId, combinedFiles);
+    if (!file || file.isPlaceholder) {
+      console.warn("[FilesPanel] Attempted to toggle link on a placeholder or non-existent file.");
+      return;
+    }
+
+    console.log("[FilesPanel] Attempting to toggle vector store link for file:", file.name);
+    
+    const isLinked = !!file.vectorStoreFileId;
+    const storeId = currentVectorStoreId;
+
+    if (!isLinked && !storeId) {
+      toast.error("Please connect to a vector store first in File Search Settings.");
+      return;
+    }
+
+    const action = isLinked ? "Unlink" : "Link";
+    if (!confirm(`Are you sure you want to ${action.toLowerCase()} '${file.name}' ${isLinked ? 'from' : 'to'} the vector store?`)) {
+        return;
+    }
+
+    setIsProcessing(true);
+    try {
+      if (isLinked) {
+        await VectorStoreService.unlinkFile(file); 
+        toast.success(`File '${file.name}' unlinked.`);
+      } else if (storeId) {
+        await VectorStoreService.linkFile(file, storeId);
+        toast.success(`File '${file.name}' linked.`);
+      }
+      
+      console.log(`[FilesPanel] Triggering sync after ${action}.`);
+      await syncFiles();
+      
+    } catch (error) {
+      console.error(`[FilesPanel] Error ${action.toLowerCase()}ing file:`, error);
+      toast.error(`Failed to ${action.toLowerCase()} file '${file.name}'.`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleUploadLocalCopy = (placeholderFile: FileItem) => {
+    closeContextMenu();
+    if (!placeholderFile || !placeholderFile.isPlaceholder) return;
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.addEventListener("change", async (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        setIsProcessing(true);
+        const uploadedFile = target.files[0];
+        console.log(`[FilesPanel] Uploading local copy for placeholder: ${placeholderFile.name}, New file: ${uploadedFile.name}`);
+        
+        try {
+            const content = await uploadedFile.arrayBuffer();
+            const base64Content = arrayBufferToBase64Util(content);
+            
+            const newLocalFile: FileItem = {
+                id: placeholderFile.id.replace('placeholder-', 'local-'),
+                name: placeholderFile.name,
+                path: placeholderFile.path,
+                type: 'file',
+                mimeType: uploadedFile.type || getMimeTypeFromExtension(uploadedFile.name),
+                content: base64Content,
+                parentId: placeholderFile.parentId,
+                vectorStoreId: placeholderFile.vectorStoreId,
+                vectorStoreFileId: placeholderFile.vectorStoreFileId,
+                isVectorStoreFile: true,
+                isPlaceholder: false,
+                lastModified: new Date().toISOString(),
+                children: undefined
+            };
+
+            await FileService.saveFile(newLocalFile);
+            console.log(`[FilesPanel] Saved local file ${newLocalFile.id} for ${newLocalFile.name}.`);
+            
+            console.log("[FilesPanel] Triggering sync after uploading local copy.");
+            await syncFiles();
+            
+            toast.success(`Local copy for '${newLocalFile.name}' uploaded.`);
+            
+        } catch (error) {
+          console.error("[FilesPanel] Error uploading local copy:", error);
+          toast.error(`Failed to upload local copy for ${placeholderFile.name}.`);
+        } finally {
+          setIsProcessing(false);
+          document.body.removeChild(input);
         }
       } else {
-        // Link to vector store
-        if (!currentVectorStoreId) {
-          console.log("[FilesPanel] No vector store ID found in files context");
-          alert("Please set up a vector store first in the File Search Settings.");
-          return;
-        }
-        await linkFileToVectorStore(fileId);
+          document.body.removeChild(input);
       }
-    } catch (error) {
-      console.error("Error toggling vector store:", error);
-      alert(file.vectorStoreFileId 
-        ? "Failed to unlink file from vector store" 
-        : "Failed to link file to vector store");
-    }
-    setContextMenu(prev => ({ ...prev, show: false }));
+    });
+
+    input.click();
   };
 
   const renderFileTree = (items: FileItem[], level = 0) => {
+    const sortedItems = [...items].sort((a, b) => {
+        if (a.type === 'folder' && b.type !== 'folder') return -1;
+        if (a.type !== 'folder' && b.type === 'folder') return 1;
+        return a.name.localeCompare(b.name);
+    });
+    
     return (
       <ul className={`space-y-1 ${level > 0 ? 'pl-4' : ''}`}>
-        {items.map(item => (
+        {sortedItems.map(item => (
           <li key={item.id}>
             <div 
               className={`
-                flex items-center p-1 pl-2 rounded-md text-sm group w-full
-                ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100' : 'cursor-pointer hover:bg-gray-100'}
-                ${item.type === 'file' && item.id === selectedFileId ? 'bg-gray-100 font-medium' : ''}
+                flex items-center p-1 pl-2 rounded-md text-sm group w-full relative
+                ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700'}
+                ${item.type === 'file' && item.id === selectedFileId ? 'bg-gray-200 dark:bg-gray-600 font-medium' : ''}
               `}
               onClick={() => {
+                if (item.isPlaceholder) {
+                    toast("This is a remote file. Upload a local copy via the context menu.");
+                    return;
+                }
                 if (item.type === 'folder') {
                   toggleFolder(item.id);
                 } else {
@@ -232,6 +354,11 @@ export default function FilesPanel() {
               onContextMenu={(e) => handleContextMenu(e, item.id)}
               title={item.name}
             >
+              {isProcessing && contextMenu.fileId === item.id && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-gray-800/50 z-10 rounded-md">
+                      <Loader2 size={16} className="animate-spin text-gray-500 dark:text-gray-400" />
+                  </div>
+              )}
               <div className="flex items-center min-w-0 flex-1">
                 {item.type === 'folder' ? (
                   <>
@@ -249,9 +376,8 @@ export default function FilesPanel() {
                 <span className="truncate">{item.name}</span>
               </div>
               
-              {/* File actions button */}
               <button 
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full transition-opacity flex-shrink-0"
+                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-opacity flex-shrink-0 ml-auto"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -272,31 +398,30 @@ export default function FilesPanel() {
   };
 
   return (
-    <div className="h-full w-full bg-white flex flex-col relative">
+    <div className="h-full w-full bg-white dark:bg-gray-800 flex flex-col relative text-gray-900 dark:text-gray-100">
       <div className="flex-1 overflow-y-auto p-3 h-full">
-        {isLoading ? (
+        {isSyncing ? (
           <div className="flex justify-center items-center h-20">
-            <p className="text-sm text-gray-500">Loading files...</p>
+            <Loader2 size={24} className="animate-spin text-gray-500" />
+            <p className="text-sm text-gray-500 ml-2">Loading files...</p>
           </div>
-        ) : files.length > 0 ? (
-          renderFileTree(files)
+        ) : combinedFiles.length > 0 ? (
+          renderFileTree(combinedFiles)
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 pt-10">
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 pt-10">
             <Folder size={32} className="mb-2" />
-            <p className="text-sm">No files uploaded yet.</p>
-            <p className="text-xs mt-1">Use the Upload button above.</p>
+            <p className="text-sm">No files found.</p>
+            <p className="text-xs mt-1">Connect to a vector store or use the Upload button.</p>
           </div>
         )}
       </div>
 
-      {/* Separator */}
-      <div className="border-t border-gray-200"></div>
+      <div className="border-t border-gray-200 dark:border-gray-700"></div>
 
-      {/* Settings Area */}
       <div className="p-2">
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className="w-full flex items-center justify-between text-sm font-medium p-1.5 rounded hover:bg-gray-100 text-gray-600"
+          className="w-full flex items-center justify-between text-sm font-medium p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
         >
           <span className="flex items-center">
             <SlidersHorizontal size={14} className="mr-2" />
@@ -305,10 +430,10 @@ export default function FilesPanel() {
           {showSettings ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         {showSettings && (
-          <div className="pt-2 pb-1 pl-1 pr-1 border-t border-gray-100 mt-2">
+          <div className="pt-2 pb-1 pl-1 pr-1 border-t border-gray-100 dark:border-gray-700 mt-2">
             <PanelConfig
               title="File Search"
-              tooltip="Allows searching content within uploaded files"
+              tooltip="Connect to a vector store to enable file content search"
               enabled={fileSearchEnabled}
               setEnabled={setFileSearchEnabled}
             >
@@ -318,50 +443,75 @@ export default function FilesPanel() {
         )}
       </div>
 
-      {/* Context Menu */}
       {contextMenu.show && (
-        <div 
-          ref={contextMenuRef}
-          className="fixed bg-white shadow-md rounded-md py-1 z-50 border border-gray-200"
-          style={{ 
-            top: `${contextMenu.y}px`, 
-            left: `${contextMenu.x}px`
-          }}
-          onClick={(e) => e.stopPropagation()}
+        <div
+          className="fixed inset-0 z-40"
+          onClick={closeContextMenu}
         >
-          {/* Vector Store Link/Unlink Button */}
-          {(() => {
-            const file = files.find(f => f.id === contextMenu.fileId);
-            if (!file || file.type !== 'file') return null;
-            
-            return (
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 flex items-center"
-                onClick={() => handleToggleVectorStore(contextMenu.fileId)}
-              >
-                {file.vectorStoreFileId ? (
-                  <>
-                    <CloudOff size={14} className="mr-2" />
-                    Unlink from Vector Store
-                  </>
-                ) : (
-                  <>
-                    <Link2 size={14} className="mr-2" />
-                    Link to Vector Store
-                  </>
-                )}
-              </button>
-            );
-          })()}
-          
-          {/* Delete Button */}
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 flex items-center text-red-600"
-            onClick={() => handleDeleteFile(contextMenu.fileId)}
+          <div
+            ref={contextMenuRef}
+            className="absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg py-1 min-w-[200px]"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <Trash2 size={14} className="mr-2" />
-            Delete
-          </button>
+            {(() => {
+              const file = findFileById(contextMenu.fileId, combinedFiles);
+              if (!file) return <div className="px-3 py-1.5 text-sm text-gray-500">Error: File not found</div>;
+              
+              const currentFile = file as FileItem;
+              const isPlaceholder = currentFile.isPlaceholder;
+              const isLinked = !!currentFile.vectorStoreFileId;
+              const isStoreAvailable = !!currentVectorStoreId;
+
+              return (
+                <>
+                  {isPlaceholder && (
+                    <button
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => handleUploadLocalCopy(currentFile)}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 
+                        <Loader2 size={14} className="mr-2 animate-spin" /> : 
+                        <Download size={14} className="mr-2" />
+                      }
+                      Upload Local Copy
+                    </button>
+                  )}
+                
+                  {!isPlaceholder && (
+                    <button
+                      className={`w-full text-left px-3 py-1.5 text-sm flex items-center ${isStoreAvailable || isLinked ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : 'text-gray-400 cursor-not-allowed'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      onClick={() => handleToggleVectorStore(currentFile.id)}
+                      disabled={(!isStoreAvailable && !isLinked) || isProcessing}
+                      title={!isStoreAvailable && !isLinked ? "Connect to vector store to link files." : (isLinked ? "Unlink file from vector store" : "Link file to vector store")}
+                    >
+                      {isProcessing && contextMenu.fileId === currentFile.id ? (
+                          <Loader2 size={14} className="mr-2 animate-spin" />
+                      ) : isLinked ? (
+                          <CloudOff size={14} className="mr-2" />
+                      ) : (
+                          <Link2 size={14} className={`mr-2 ${isStoreAvailable ? '' : 'text-gray-400'}`} />
+                      )}
+                      {isLinked ? "Unlink from Vector Store" : "Link to Vector Store"}
+                    </button>
+                  )}
+                  
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => handleDeleteFile(currentFile.id)}
+                    disabled={isProcessing}
+                  >
+                     {isProcessing ? 
+                        <Loader2 size={14} className="mr-2 animate-spin" /> : 
+                        <Trash2 size={14} className="mr-2" />
+                      }
+                    Delete
+                  </button>
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>
